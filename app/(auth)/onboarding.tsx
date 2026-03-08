@@ -1,57 +1,57 @@
-import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Dimensions, 
-  Image, 
-  TouchableOpacity,
-  SafeAreaView
+// app/(auth)/onboarding.tsx
+import React, { useState, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, Dimensions,
+  TouchableOpacity
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Theme } from '../../constants/theme';
 import { WarmButton } from '../../components/WarmButton';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { triggerOnboardingRefresh } from '../_layout';
 
-const { width, height } = Dimensions.get('window');
+const ONBOARDING_KEY = 'moodrings_has_seen_onboarding';
 
 const SLIDES = [
   {
     id: 1,
     title: 'Your Relationship Heartbeat',
     description: 'A shared space to log feelings, track trends, and grow closer every day.',
-    image: 'heart' // I'll use Ionicons for now since I can't generate images easily here
   },
   {
     id: 2,
     title: 'Stay in Sync',
     description: 'Visual insights help you understand each other better without having to say a word.',
-    image: 'analytics'
   },
   {
     id: 3,
     title: 'Your Private Sanctuary',
     description: 'Journal entries are yours alone. We promise complete privacy and security for your deepest thoughts.',
-    image: 'shield-checkmark'
+  },
+  {
+    id: 4,
+    emoji: '💑',
+    title: 'Tell Us About You Two',
+    description: 'A few quick details help us personalize your experience and relationship insights.',
   }
 ];
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const ONBOARDING_KEY = 'moodrings_has_seen_onboarding';
-
 export default function OnboardingScreen() {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const router = useRouter();
 
   const handleNext = async () => {
     if (currentSlide < SLIDES.length - 1) {
       setCurrentSlide(currentSlide + 1);
     } else {
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-      router.replace('/(auth)/login');
+      triggerOnboardingRefresh.fn();
     }
   };
 
+  const handleSkip = async () => {
+    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    triggerOnboardingRefresh.fn();
+  };
 
   const slide = SLIDES[currentSlide];
 
@@ -59,10 +59,11 @@ export default function OnboardingScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <View style={styles.imageContainer}>
-          {/* Using icons as placeholders for "warm illustrations" */}
           <View style={styles.illustrationCircle}>
             <View style={{ transform: [{ scale: 3 }] }}>
-                <Text style={{ fontSize: 40 }}>{slide.id === 1 ? '🏡' : slide.id === 2 ? '📊' : '🔐'}</Text>
+              <Text style={{ fontSize: 40 }}>
+                {slide.emoji ? slide.emoji : (slide.id === 1 ? '🏡' : slide.id === 2 ? '📊' : '🔐')}
+              </Text>
             </View>
           </View>
         </View>
@@ -75,26 +76,20 @@ export default function OnboardingScreen() {
         <View style={styles.footer}>
           <View style={styles.pagination}>
             {SLIDES.map((_, i) => (
-              <View 
-                key={i} 
-                style={[
-                  styles.dot, 
-                  currentSlide === i && styles.activeDot
-                ]} 
+              <View
+                key={i}
+                style={[styles.dot, currentSlide === i && styles.activeDot]}
               />
             ))}
           </View>
 
-          <WarmButton 
-            title={currentSlide === SLIDES.length - 1 ? "Start Your Journey" : "Continue"} 
+          <WarmButton
+            title={currentSlide === SLIDES.length - 1 ? 'Start Your Journey' : 'Continue'}
             onPress={handleNext}
             style={styles.button}
           />
 
-          <TouchableOpacity 
-            onPress={() => router.replace('/(auth)/login')}
-            style={styles.skipButton}
-          >
+          <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
             <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
         </View>
@@ -123,7 +118,7 @@ const styles = StyleSheet.create({
     width: 240,
     height: 240,
     borderRadius: 120,
-    backgroundColor: '#F7F2EE', // Very soft warm wash
+    backgroundColor: '#F7F2EE',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,

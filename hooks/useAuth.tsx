@@ -45,6 +45,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (process.env.EXPO_PUBLIC_DEMO_MODE === 'true') return;
       setSession(session);
       setUser(session?.user ?? null);
+      setInitialized(true);
     });
 
     return () => subscription.unsubscribe();

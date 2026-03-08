@@ -1,17 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
+import { supabase } from '../services/supabase';
 import * as SplashScreen from 'expo-splash-screen';
-import { 
-  useFonts, 
-  PlayfairDisplay_400Regular, 
-  PlayfairDisplay_700Bold 
+import {
+  useFonts,
+  PlayfairDisplay_400Regular,
+  PlayfairDisplay_700Bold,
 } from '@expo-google-fonts/playfair-display';
-import { 
-  Inter_400Regular, 
-  Inter_500Medium, 
-  Inter_700Bold 
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -20,12 +21,19 @@ SplashScreen.preventAutoHideAsync();
 const ONBOARDING_KEY = 'moodrings_has_seen_onboarding';
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
 
+export const triggerOnboardingRefresh = { fn: () => {} };
+
 function InitialLayout() {
-  const { initialized, session, user } = useAuth();
+  const { initialized, session } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
   const [hasPartner, setHasPartner] = useState<boolean | null>(null);
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null);
+
+  // ── Guard: only navigate once per logical state change ───────────────────
+  // Without this, every segment change re-triggers navigation → infinite loop
+  const navigationTarget = useRef<string | null>(null);
 
   const [fontsLoaded] = useFonts({
     PlayfairDisplay_400Regular,
@@ -36,64 +44,135 @@ function InitialLayout() {
   });
 
   useEffect(() => {
-    const checkOnboarding = async () => {
+    const load = async () => {
       const val = await AsyncStorage.getItem(ONBOARDING_KEY);
       setHasSeenOnboarding(val === 'true');
     };
-    checkOnboarding();
+    load();
+    triggerOnboardingRefresh.fn = load;
   }, []);
 
   useEffect(() => {
     const checkPartner = async () => {
       if (!session?.user?.id) {
-        console.log('[Layout] No session — hasPartner = false');
         setHasPartner(false);
         return;
       }
-      console.log('[Layout] Checking partner for user ID:', session.user.id);
-      console.log('[Layout] API_URL:', API_URL);
       try {
-        const url = `${API_URL}/auth/me?user_id=${session.user.id}`;
-        console.log('[Layout] Fetching:', url);
-        const resp = await fetch(url);
+        const resp = await fetch(`${API_URL}/auth/me?user_id=${session.user.id}`);
+        if (!resp.ok) {
+           if (resp.status === 404) {
+             supabase.auth.signOut();
+           }
+           return;
+        }
         const data = await resp.json();
-        console.log('[Layout] /auth/me response:', JSON.stringify(data));
         setHasPartner(!!data.partner_id);
-      } catch (e) {
-        console.log('[Layout] checkPartner fetch error:', e);
-        setHasPartner(false);
+        setProfileComplete(!!data.profile_complete);
+      } catch {
+        // network error, retain current state
       }
     };
     checkPartner();
   }, [session]);
 
+  // Continuously poll partner status so if the other user deletes/unlinks
+  // we are automatically kicked back to the pairing screen
   useEffect(() => {
-    if (!initialized || !fontsLoaded || hasSeenOnboarding === null || hasPartner === null) return;
+    let interval: ReturnType<typeof setInterval>;
+    
+    if (session?.user?.id && hasPartner) {
+      interval = setInterval(async () => {
+        try {
+          const resp = await fetch(`${API_URL}/auth/me?user_id=${session.user.id}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (!data.partner_id) {
+              setHasPartner(false);
+            }
+          } else if (resp.status === 404) {
+             supabase.auth.signOut();
+          }
+        } catch { }
+      }, 5000); // Check every 5 seconds
+    }
+    
+    return () => clearInterval(interval);
+  }, [session, hasPartner]);
 
-    const inAuthGroup = segments[0] === '(auth)';
-    const isPairing = (segments as any[]).includes('pairing');
-    const isOnboarding = (segments as any[]).includes('onboarding');
+  useEffect(() => {
+    // Wait until everything is ready
+    if (
+      !initialized ||
+      !fontsLoaded ||
+      hasSeenOnboarding === null ||
+      (session && (hasPartner === null || profileComplete === null))
+    ) return;
 
-    console.log('[Layout] Routing — hasPartner:', hasPartner, '| inAuthGroup:', inAuthGroup, '| isPairing:', isPairing, '| session:', !!session);
+    SplashScreen.hideAsync();
+
+    const currentSegment = segments.join('/');
+
+    // ── Determine where we SHOULD be ────────────────────────────────────────
+    let target: string;
+
+    if (!session && navigationTarget.current === '/(tabs)') {
+      navigationTarget.current = null;
+    }
 
     if (!session) {
-      if (!hasSeenOnboarding && !isOnboarding) {
-        router.replace('/(auth)/onboarding');
-      } else if (hasSeenOnboarding && !inAuthGroup) {
-        router.replace('/(auth)/login');
+      // Not logged in
+      if (!hasSeenOnboarding) {
+        target = '/(auth)/onboarding';
+      } else {
+        target = '/(auth)/login';
       }
     } else {
-      if (!hasPartner && !isPairing && !isOnboarding) {
-        router.replace('/(auth)/pairing');
-      } else if (hasPartner && inAuthGroup) {
-        router.replace('/(tabs)');
+      // Logged in
+      if (!profileComplete) {
+        target = '/(auth)/profile-setup';
+      } else if (!hasPartner) {
+        target = '/(auth)/pairing';
+      } else {
+        target = '/(tabs)';
       }
     }
 
-    SplashScreen.hideAsync();
-  }, [session, initialized, segments, fontsLoaded, hasSeenOnboarding, hasPartner]);
+    // ── Only navigate if we're not already there ─────────────────────────
+    // This prevents the infinite loop — we track where we last sent the user
+    // and skip if it's the same destination
+    if (navigationTarget.current === target) return;
 
-  if (!initialized || !fontsLoaded || hasSeenOnboarding === null || hasPartner === null) {
+    // Also skip if the current screen already matches the target group
+    const alreadyThere =
+      (target === '/(tabs)' && currentSegment.startsWith('(tabs)')) ||
+      (target === '/(auth)/onboarding' && currentSegment.includes('onboarding')) ||
+      (target === '/(auth)/login' && currentSegment.includes('login')) ||
+      (target === '/(auth)/profile-setup' && currentSegment.includes('profile-setup')) ||
+      (target === '/(auth)/pairing' && currentSegment.includes('pairing'));
+
+    if (alreadyThere) return;
+
+    console.log('[Layout] Navigating to:', target);
+    navigationTarget.current = target;
+    router.replace(target as any);
+
+  }, [initialized, fontsLoaded, hasSeenOnboarding, hasPartner, profileComplete, session]); // Removed segments from dependency array
+
+  useEffect(() => {
+    if (!session) {
+      navigationTarget.current = null;
+      setProfileComplete(null);
+      setHasPartner(null);
+    }
+  }, [session]);
+
+  if (
+    !initialized ||
+    !fontsLoaded ||
+    hasSeenOnboarding === null ||
+    (session && (hasPartner === null || profileComplete === null))
+  ) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAF8F5' }}>
         <ActivityIndicator size="large" color="#C4764A" />

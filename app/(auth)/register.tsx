@@ -7,9 +7,9 @@ import {
   Alert, 
   KeyboardAvoidingView, 
   Platform,
-  SafeAreaView,
   TouchableOpacity
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../services/supabase';
 import { Theme } from '../../constants/theme';
@@ -27,9 +27,7 @@ export default function RegisterScreen() {
     if (error) {
       Alert.alert('Error', error.message);
     } else {
-      Alert.alert('Success', 'Welcome to MoodRings! Let\'s connect you with your partner.', [
-        { text: 'Continue', onPress: () => router.replace('/(auth)/pairing') }
-      ]);
+      Alert.alert('Success', 'Welcome to MoodRings! Let\'s connect you with your partner.');
     }
     setLoading(false);
   };

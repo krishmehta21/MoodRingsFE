@@ -7,9 +7,9 @@ import {
   Alert, 
   KeyboardAvoidingView, 
   Platform,
-  SafeAreaView,
   TouchableOpacity
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../services/supabase';
 import { Theme } from '../../constants/theme';
@@ -26,17 +26,8 @@ export default function LoginScreen() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       Alert.alert('Error', error.message);
-      setLoading(false);
-    } else {
-      // Logic for partner check
-      const hasPartner = !!data.user?.user_metadata?.partner_id;
-      if (hasPartner) {
-        router.replace('/(tabs)');
-      } else {
-        router.replace('/(auth)/pairing');
-      }
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   return (
