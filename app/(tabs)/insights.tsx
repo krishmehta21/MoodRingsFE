@@ -1,20 +1,20 @@
-import React, { useState, useCallback } from 'react';
-import { 
-  ScrollView, 
-  View, 
-  Text, 
-  StyleSheet, 
-  RefreshControl,
-} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { Theme } from '../../constants/theme';
+import React, { useCallback, useState } from 'react';
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { SkeletonCard } from '../../components/SkeletonCard';
 import { WarmButton } from '../../components/WarmButton';
+import { Theme } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
-import { Ionicons } from '@expo/vector-icons';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
-import { SafeAreaView } from 'react-native-safe-area-context';
+const API_URL = process.env.EXPO_PUBLIC_API_URL ;
 export default function InsightsScreen() {
   const { user } = useAuth();
   

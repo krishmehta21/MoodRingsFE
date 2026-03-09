@@ -1,29 +1,29 @@
-import React, { useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
-  TouchableOpacity,
-  Alert,
-  Share,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  BackHandler
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Theme } from '../../constants/theme';
-import { WarmButton } from '../../components/WarmButton';
-import { useAuth } from '../../hooks/useAuth';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { WarmButton } from '../../components/WarmButton';
+import { Theme } from '../../constants/theme';
+import { useAuth } from '../../hooks/useAuth';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function PairingScreen() {
-  const { user } = useAuth();
+  const { user, token, updateUser } = useAuth();
   const router = useRouter();
 
   const [mode, setMode] = useState<'choice' | 'generate' | 'enter'>('choice');
@@ -54,7 +54,8 @@ export default function PairingScreen() {
     setLoading(true);
     try {
       const resp = await fetch(`${API_URL}/auth/generate-code?user_id=${user.id}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await resp.json();
 
@@ -100,7 +101,10 @@ export default function PairingScreen() {
     try {
       const resp = await fetch(`${API_URL}/auth/link`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ user_id: user.id, invite_code: partnerCode })
       });
       const data = await resp.json();
@@ -123,6 +127,7 @@ export default function PairingScreen() {
       }
       if (!resp.ok) throw new Error(data.detail || "Linking failed. Please try again.");
 
+      await updateUser({ partner_id: data.partner.id });
       setSuccess(true);
       setTimeout(() => router.replace('/(tabs)'), 3000);
     } catch (e: any) {

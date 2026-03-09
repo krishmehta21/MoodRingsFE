@@ -7,6 +7,7 @@ interface SuggestionCardProps {
   title: string;
   description: string;
   tier?: 'soft' | 'active' | 'priority';
+  actions?: string[];
   onPress?: () => void;
   completed?: boolean;
   completedMessage?: string;
@@ -16,6 +17,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   title,
   description,
   tier = 'soft',
+  actions = [],
   onPress,
   completed = false,
   completedMessage = 'Beautiful. You showed up for each other.',
@@ -52,15 +54,29 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   return (
     <View style={[styles.container, { backgroundColor: stylesT.backgroundColor, borderColor: stylesT.borderColor }]}>
       <View style={styles.iconContainer}>
-        <Ionicons name={stylesT.icon as any} size={24} color={stylesT.iconColor} />
+        <Ionicons name={completed ? "checkmark-circle" : stylesT.icon as any} size={24} color={completed ? Theme.colors.success : stylesT.iconColor} />
       </View>
       <View style={styles.textContainer}>
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.description}>{description}</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={onPress}>
-          <Text style={[styles.actionText, { color: stylesT.iconColor }]}>Try this today</Text>
-          <Ionicons name="arrow-forward" size={14} color={stylesT.iconColor} />
-        </TouchableOpacity>
+        <Text style={styles.description}>{completed ? completedMessage : description}</Text>
+        
+        {!completed && actions.length > 0 && (
+          <View style={styles.actionsList}>
+            {actions.map((action, index) => (
+              <View key={index} style={styles.actionItem}>
+                <Ionicons name="ellipse" size={6} color={stylesT.iconColor} style={styles.actionBullet} />
+                <Text style={styles.actionItemText}>{action}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {!completed && (
+          <TouchableOpacity style={styles.actionButton} onPress={onPress}>
+            <Text style={[styles.actionText, { color: stylesT.iconColor }]}>Mark as done</Text>
+            <Ionicons name="checkmark" size={16} color={stylesT.iconColor} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -106,11 +122,31 @@ const styles = StyleSheet.create({
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 8,
   },
   actionText: {
     fontFamily: Theme.fonts.bodyBold,
     fontSize: 14,
     color: Theme.colors.accent,
     marginRight: 4,
+  },
+  actionsList: {
+    marginBottom: 8,
+    gap: 6,
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  actionBullet: {
+    marginTop: 6,
+    marginRight: 6,
+  },
+  actionItemText: {
+    fontFamily: Theme.fonts.body,
+    fontSize: 13,
+    color: Theme.colors.textPrimary,
+    flex: 1,
+    lineHeight: 18,
   },
 });

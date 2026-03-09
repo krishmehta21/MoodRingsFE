@@ -1,24 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  ScrollView,
-  Switch,
-  Linking,
-  ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useAuth } from '../../hooks/useAuth';
-import { supabase } from '../../services/supabase';
-import { Theme } from '../../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Theme } from '../../constants/theme';
+import { useAuth } from '../../hooks/useAuth';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 type MenuRowProps = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -53,7 +51,7 @@ function MenuRow({ icon, label, sublabel, onPress, right, destructive }: MenuRow
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, token, logout } = useAuth();
   const [partnerData, setPartnerData] = useState<any>(null);
   const [profileData, setProfileData] = useState<any>(null);
   const [myStreak, setMyStreak] = useState(0);
@@ -79,8 +77,8 @@ export default function ProfileScreen() {
     try {
       setProfileLoading(true);
       const [meResp, dashResp] = await Promise.all([
-        fetch(`${API_URL}/auth/me?user_id=${user.id}`),
-        fetch(`${API_URL}/dashboard?user_id=${user.id}`)
+        fetch(`${API_URL}/auth/me?user_id=${user.id}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/dashboard?user_id=${user.id}`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
       const meData = await meResp.json();
       const dashData = await dashResp.json();
@@ -125,7 +123,7 @@ export default function ProfileScreen() {
     try {
       const resp = await fetch(
         `${API_URL}/auth/unlink?user_id=${user.id}`,
-        { method: 'DELETE' }
+        { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || 'Unlink failed.');
@@ -133,7 +131,7 @@ export default function ProfileScreen() {
       setShowPartnerPanel(false);
       setUnlinkConfirmVisible(false);
       // Sign out after short delay so state updates are visible
-      setTimeout(() => supabase.auth.signOut(), 800);
+      setTimeout(() => logout(), 800);
     } catch (e: any) {
       setUnlinkError(e.message || 'Something went wrong. Please try again.');
     } finally {
@@ -142,7 +140,7 @@ export default function ProfileScreen() {
   };
 
   const handleSignOut = () => {
-    supabase.auth.signOut();
+    logout();
   };
 
   const performDeleteAccount = async () => {
@@ -152,14 +150,14 @@ export default function ProfileScreen() {
     try {
       const resp = await fetch(
         `${API_URL}/auth/me?user_id=${user.id}`,
-        { method: 'DELETE' }
+        { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }
       );
       if (!resp.ok) {
         const data = await resp.json();
         throw new Error(data.detail || 'Failed to delete account.');
       }
       setDeleteConfirmVisible(false);
-      supabase.auth.signOut();
+      logout();
     } catch (e: any) {
       setDeleteError(e.message || 'Something went wrong while deleting.');
     } finally {

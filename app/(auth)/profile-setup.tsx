@@ -1,22 +1,22 @@
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  StyleSheet, 
-  Alert, 
-  KeyboardAvoidingView, 
+import {
+  Alert,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
-  TouchableOpacity
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Theme } from '../../constants/theme';
 import { WarmButton } from '../../components/WarmButton';
+import { Theme } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 const RELATIONSHIP_TYPES = [
   'Dating',

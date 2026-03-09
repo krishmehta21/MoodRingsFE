@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter } from 'expo-router';
-import { supabase } from '../../services/supabase';
+import { useAuth } from '../../hooks/useAuth';
 import { Theme } from '../../constants/theme';
 import { WarmButton } from '../../components/WarmButton';
 
@@ -19,15 +19,35 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  const { login, user } = useAuth();
   const router = useRouter();
 
   const handleLogin = async () => {
-    setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      Alert.alert('Error', error.message);
+    if (!email || !password) {
+      setErrorMsg('Please enter both email and password.');
+      return;
     }
-    setLoading(false);
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      await login(email, password);
+      // Wait for layout to magically redirect based on token state, 
+      // but explicitly pushing just in case per user constraints
+      if (user?.partner_id) {
+         router.replace('/(tabs)');
+      } else {
+         router.replace('/(auth)/pairing');
+      }
+    } catch (error: any) {
+      let msg = error.message || 'Connection failed. Please check your internet and try again.';
+      if (msg.includes('network') || msg.includes('timeout') || msg === 'Failed to fetch') {
+         msg = 'Connection failed. Please check your internet and try again.';
+      }
+      setErrorMsg(msg);
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,6 +79,8 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               secureTextEntry
             />
+
+            {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
 
             <WarmButton 
               title="Log In" 
@@ -143,5 +165,13 @@ const styles = StyleSheet.create({
   linkTextBold: {
     fontFamily: Theme.fonts.bodyBold,
     color: Theme.colors.accent,
+  },
+  errorText: {
+    fontFamily: Theme.fonts.body,
+    fontSize: 14,
+    color: '#D32F2F',
+    textAlign: 'center',
+    marginBottom: 16,
+    marginTop: -8,
   },
 });

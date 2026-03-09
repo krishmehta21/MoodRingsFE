@@ -1,25 +1,25 @@
-import React, { useState, useCallback } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
-  ScrollView,
-  View,
-  Text,
-  StyleSheet,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
   TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { Theme } from '../../constants/theme';
-import { MoodSlider } from '../../components/MoodSlider';
 import { EmotionTagPill } from '../../components/EmotionTagPill';
-import { WarmButton } from '../../components/WarmButton';
 import { JournalInput } from '../../components/JournalInput';
+import { MoodSlider } from '../../components/MoodSlider';
+import { WarmButton } from '../../components/WarmButton';
+import { Theme } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
-import { Ionicons } from '@expo/vector-icons';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 const EMOTIONS = [
   'Calm', 'Anxious', 'Happy', 'Tired', 'Loved',
