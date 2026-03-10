@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, TextInput, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { View, TextInput, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface JournalInputProps {
   value: string;
@@ -29,6 +30,7 @@ export const JournalInput: React.FC<JournalInputProps> = ({
   onChangeText,
   placeholder,
 }) => {
+  const { colors } = useTheme();
   const [focused, setFocused] = useState(false);
   const [promptIndex, setPromptIndex] = useState(0);
 
@@ -54,33 +56,45 @@ export const JournalInput: React.FC<JournalInputProps> = ({
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Ionicons name="lock-closed" size={13} color={Theme.colors.textSecondary} />
-          <Text style={styles.headerTitle}>Private journal</Text>
+          <Ionicons name="lock-closed" size={13} color={colors.textSecondary} />
+          <Text style={[styles.headerTitle, { color: colors.textSecondary }]}>Private journal</Text>
         </View>
-        <Text style={styles.headerSub}>Your partner never sees this</Text>
+        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>Your partner never sees this</Text>
       </View>
 
       {/* Prompt chip */}
       <View style={styles.promptRow}>
-        <TouchableOpacity style={styles.promptChip} onPress={usePrompt} activeOpacity={0.7}>
-          <Ionicons name="sparkles" size={12} color={Theme.colors.accent} />
-          <Text style={styles.promptText} numberOfLines={1}>{currentPrompt}</Text>
+        <TouchableOpacity 
+          style={[styles.promptChip, { backgroundColor: `${colors.accent}14`, borderColor: `${colors.accent}30` }]} 
+          onPress={usePrompt} 
+          activeOpacity={0.7}
+        >
+          <Ionicons name="sparkles" size={12} color={colors.accent} />
+          <Text style={[styles.promptText, { color: colors.accent }]} numberOfLines={1}>{currentPrompt}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.shuffleButton} onPress={cyclePrompt} activeOpacity={0.7}>
-          <Ionicons name="shuffle" size={14} color={Theme.colors.textSecondary} />
+        <TouchableOpacity 
+          style={[styles.shuffleButton, { backgroundColor: colors.bgCard, borderColor: colors.borderDefault }]} 
+          onPress={cyclePrompt} 
+          activeOpacity={0.7}
+        >
+          <Ionicons name="shuffle" size={14} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
       {/* Input area */}
-      <View style={[styles.inputCard, focused && styles.inputCardFocused]}>
+      <View style={[
+        styles.inputCard, 
+        { backgroundColor: colors.bgInput, borderColor: colors.borderDefault },
+        focused && { borderColor: `${colors.accent}80`, backgroundColor: colors.bgCard }
+      ]}>
         {/* Decorative left border accent */}
-        <View style={styles.accentBar} />
+        <View style={[styles.accentBar, { backgroundColor: `${colors.accent}40` }]} />
 
         <TextInput
           multiline
-          style={styles.input}
+          style={[styles.input, { color: colors.textPrimary }]}
           placeholder={placeholder || "What's on your mind..."}
-          placeholderTextColor="#C8BDB8"
+          placeholderTextColor={colors.textPlaceholder}
           value={value}
           onChangeText={t => onChangeText(t.slice(0, MAX_CHARS))}
           textAlignVertical="top"
@@ -89,19 +103,20 @@ export const JournalInput: React.FC<JournalInputProps> = ({
         />
 
         {/* Footer inside card */}
-        <View style={styles.inputFooter}>
+        <View style={[styles.inputFooter, { borderTopColor: colors.borderSubtle }]}>
           {value.length > 0 ? (
             <TouchableOpacity onPress={() => onChangeText('')} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={14} color={Theme.colors.textSecondary} />
-              <Text style={styles.clearText}>Clear</Text>
+              <Ionicons name="close-circle" size={14} color={colors.textSecondary} />
+              <Text style={[styles.clearText, { color: colors.textSecondary }]}>Clear</Text>
             </TouchableOpacity>
           ) : (
             <View />
           )}
           <Text style={[
             styles.charCount,
-            isNearLimit && styles.charCountWarn,
-            isAtLimit && styles.charCountDanger,
+            { color: colors.textSecondary },
+            isNearLimit && { color: colors.accentGold },
+            isAtLimit && { color: colors.accent },
           ]}>
             {isAtLimit ? `${charsLeft} left` : `${value.length}/${MAX_CHARS}`}
           </Text>
@@ -111,8 +126,8 @@ export const JournalInput: React.FC<JournalInputProps> = ({
       {/* Privacy note */}
       {focused && (
         <View style={styles.privacyNote}>
-          <Ionicons name="shield-checkmark-outline" size={12} color="#7AAB8A" />
-          <Text style={styles.privacyText}>
+          <Ionicons name="shield-checkmark-outline" size={12} color={colors.accentSage} />
+          <Text style={[styles.privacyText, { color: colors.accentSage }]}>
             Encrypted and stored privately. Your partner only sees your mood score.
           </Text>
         </View>
@@ -126,7 +141,6 @@ const styles = StyleSheet.create({
   wrapper: {
     width: '100%',
   },
-
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -140,19 +154,15 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: Theme.fonts.bodyBold,
-    fontSize: 13,
-    color: Theme.colors.textSecondary,
+    fontSize: 10,
     textTransform: 'uppercase',
-    letterSpacing: 1.2,
+    letterSpacing: 2,
   },
   headerSub: {
     fontFamily: Theme.fonts.body,
     fontSize: 11,
-    color: Theme.colors.textSecondary,
     fontStyle: 'italic',
   },
-
-  // Prompt row
   promptRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -164,43 +174,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Theme.colors.accent + '14',
     borderRadius: 20,
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: Theme.colors.accent + '30',
   },
   promptText: {
     flex: 1,
     fontFamily: Theme.fonts.body,
     fontSize: 12,
-    color: Theme.colors.accent,
   },
   shuffleButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Theme.colors.border,
   },
-
-  // Input card
   inputCard: {
-    backgroundColor: '#FDFCFB',
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: Theme.colors.border,
     overflow: 'hidden',
     minHeight: 140,
     ...Theme.shadows.soft,
-  },
-  inputCardFocused: {
-    borderColor: Theme.colors.accent + '80',
-    backgroundColor: '#FFFFFF',
   },
   accentBar: {
     position: 'absolute',
@@ -208,7 +205,6 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 3,
-    backgroundColor: Theme.colors.accent + '40',
     borderTopLeftRadius: 16,
     borderBottomLeftRadius: 16,
   },
@@ -217,7 +213,6 @@ const styles = StyleSheet.create({
     paddingLeft: 18,
     fontFamily: Theme.fonts.body,
     fontSize: 15,
-    color: Theme.colors.textPrimary,
     lineHeight: 24,
     minHeight: 110,
   },
@@ -228,7 +223,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F0EBE8',
   },
   clearButton: {
     flexDirection: 'row',
@@ -238,21 +232,11 @@ const styles = StyleSheet.create({
   clearText: {
     fontFamily: Theme.fonts.body,
     fontSize: 11,
-    color: Theme.colors.textSecondary,
   },
   charCount: {
     fontFamily: Theme.fonts.body,
     fontSize: 11,
-    color: Theme.colors.textSecondary,
   },
-  charCountWarn: {
-    color: '#C4A35A',
-  },
-  charCountDanger: {
-    color: '#C4764A',
-  },
-
-  // Privacy note (shows on focus)
   privacyNote: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -264,7 +248,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: Theme.fonts.body,
     fontSize: 11,
-    color: '#7AAB8A',
     lineHeight: 16,
   },
 });

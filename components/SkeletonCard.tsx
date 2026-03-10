@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Animated, StyleSheet, ViewStyle } from 'react-native';
 import { Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface SkeletonCardProps {
   width?: number | string;
@@ -15,6 +16,7 @@ export const SkeletonCard: React.FC<SkeletonCardProps> = ({
   borderRadius = Theme.borderRadius.lg,
   style,
 }) => {
+  const { colors } = useTheme();
   const opacity = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
@@ -43,6 +45,7 @@ export const SkeletonCard: React.FC<SkeletonCardProps> = ({
           height: height as any,
           borderRadius,
           opacity,
+          backgroundColor: colors.bgTag,
         },
         style,
       ]}
@@ -51,7 +54,5 @@ export const SkeletonCard: React.FC<SkeletonCardProps> = ({
 };
 
 const styles = StyleSheet.create({
-  skeleton: {
-    backgroundColor: Theme.colors.tagBackground,
-  },
+  skeleton: {},
 });

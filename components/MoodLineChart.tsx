@@ -2,22 +2,31 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Svg, { Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface DataPoint {
   date: string;
   score: number;
 }
 
+interface ChartConfig {
+  userColor?: string;
+  partnerColor?: string;
+  gridColor?: string;
+  labelColor?: string;
+  backgroundColor?: string;
+}
+
 interface MoodLineChartProps {
   partnerAData: DataPoint[];
   partnerBData: DataPoint[];
+  config?: ChartConfig;
 }
 
-const { width } = Dimensions.get('window');
-const PARTNER_A_COLOR = '#6B9FD4';
-const PARTNER_B_COLOR = '#E8A0B4';
+const { width: W } = Dimensions.get('window');
 
 const getMoodEmoji = (score: number) => {
+  if (score === 0) return '—';
   if (score <= 2) return '😔';
   if (score <= 4) return '😕';
   if (score <= 6) return '😐';
@@ -28,15 +37,26 @@ const getMoodEmoji = (score: number) => {
 export const MoodLineChart: React.FC<MoodLineChartProps> = ({
   partnerAData,
   partnerBData,
+  config = {}
 }) => {
-  const chartW = width - 48; // padding overall
-  const chartH = 170;
+  const { colors, isDark } = useTheme();
+
+  const {
+    userColor = colors.chartUser,
+    partnerColor = colors.chartPartner,
+    gridColor = colors.chartGrid,
+    labelColor = colors.chartAxis,
+    backgroundColor = isDark ? 'transparent' : colors.bgCard
+  } = config;
+
+  const chartW = W - 72; // Adjusted for padding inside card
+  const chartH = 180;
   const padT = 20;
   const padB = 25;
   const padL = 25;
-  const padR = 20;
+  const padR = 10;
 
-  const { pathA, pathB, pointsA, pointsB, xAxisTicks, yAxisTicks, lastA, lastB, avgA, avgB } = useMemo(() => {
+  const { pathA, pathB, pointsA, pointsB, xAxisTicks, yAxisTicks, lastA, lastB } = useMemo(() => {
     const allDatesSet = new Set([
       ...partnerAData.map(d => d.date),
       ...partnerBData.map(d => d.date),
@@ -44,14 +64,15 @@ export const MoodLineChart: React.FC<MoodLineChartProps> = ({
     const allDates = Array.from(allDatesSet).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
     if (allDates.length === 0) {
-      return { pathA: '', pathB: '', pointsA: [], pointsB: [], xAxisTicks: [], yAxisTicks: [], lastA: 0, lastB: 0, avgA: 0, avgB: 0 };
+      return { pathA: '', pathB: '', pointsA: [], pointsB: [], xAxisTicks: [], yAxisTicks: [], lastA: 0, lastB: 0 };
     }
 
     const mapDataA = new Map(partnerAData.map(d => [d.date, d.score]));
     const mapDataB = new Map(partnerBData.map(d => [d.date, d.score]));
 
-    let prevA = 5;
-    let prevB = 5;
+    // Use actual last values or 0
+    let lastKnownA = partnerAData.length > 0 ? partnerAData[0].score : 5;
+    let lastKnownB = partnerBData.length > 0 ? partnerBData[0].score : 5;
 
     const layoutPointsA: any[] = [];
     const layoutPointsB: any[] = [];
@@ -61,12 +82,12 @@ export const MoodLineChart: React.FC<MoodLineChartProps> = ({
 
     allDates.forEach((date, i) => {
       const realA = mapDataA.has(date);
-      const valA = realA ? mapDataA.get(date)! : prevA;
-      prevA = valA;
+      const valA = realA ? mapDataA.get(date)! : lastKnownA;
+      if (realA) lastKnownA = valA;
       
       const realB = mapDataB.has(date);
-      const valB = realB ? mapDataB.get(date)! : prevB;
-      prevB = valB;
+      const valB = realB ? mapDataB.get(date)! : lastKnownB;
+      if (realB) lastKnownB = valB;
 
       const x = allDates.length === 1 ? padL + usableW / 2 : padL + (i / (allDates.length - 1)) * usableW;
       
@@ -82,12 +103,10 @@ export const MoodLineChart: React.FC<MoodLineChartProps> = ({
       return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x},${p.y}`).join(' ');
     };
 
-    // Calculate Y Axis ticks
     const yAxisTicks = [10, 7, 4, 1].map(val => {
       return { val, y: padT + usableH - ((val - 1) / 9) * usableH };
     });
 
-    // Calculate X Axis labels
     const step = Math.max(1, Math.ceil(allDates.length / 5));
     const xAxisTicks = layoutPointsA.map((p, i) => {
       if (i % step !== 0 && i !== layoutPointsA.length - 1 && i !== 0) return null;
@@ -95,15 +114,12 @@ export const MoodLineChart: React.FC<MoodLineChartProps> = ({
       if (isNaN(dateObj.getTime())) return null;
       const label = p.date.includes('T') 
         ? dateObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-        : dateObj.toLocaleDateString(undefined, { weekday: 'short' });
+        : dateObj.toLocaleDateString(undefined, { month: '2-digit', day: '2-digit' });
       return { x: p.x, label };
     }).filter(t => t !== null);
 
     const actualLastA = partnerAData.length > 0 ? partnerAData[partnerAData.length - 1].score : 0;
     const actualLastB = partnerBData.length > 0 ? partnerBData[partnerBData.length - 1].score : 0;
-
-    const actualAvgA = partnerAData.length > 0 ? Math.round(partnerAData.reduce((s, d) => s + d.score, 0) / partnerAData.length) : 0;
-    const actualAvgB = partnerBData.length > 0 ? Math.round(partnerBData.reduce((s, d) => s + d.score, 0) / partnerBData.length) : 0;
 
     return { 
       pathA: drawPath(layoutPointsA), 
@@ -113,16 +129,20 @@ export const MoodLineChart: React.FC<MoodLineChartProps> = ({
       xAxisTicks, 
       yAxisTicks,
       lastA: actualLastA,
-      lastB: actualLastB,
-      avgA: actualAvgA,
-      avgB: actualAvgB
+      lastB: actualLastB
     };
   }, [partnerAData, partnerBData, chartW]);
 
-  if (pointsA.length === 0) {
+  if (pointsA.length < 2 && pointsB.length < 2) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No mood data yet for this period.</Text>
+      <View style={[styles.emptyContainer, { height: chartH }]}>
+        <View style={{ flexDirection: 'row', marginBottom: 16 }}>
+          <View style={[styles.emptyRing, { borderColor: '#B8A1E3' }]} />
+          <View style={[styles.emptyRing, { borderColor: '#F7A6C4', marginLeft: -12 }]} />
+        </View>
+        <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+          Keep logging together to see your mood story here 💜
+        </Text>
       </View>
     );
   }
@@ -130,255 +150,123 @@ export const MoodLineChart: React.FC<MoodLineChartProps> = ({
   const lastRealIdxA = pointsA.map(p => p.real).lastIndexOf(true);
   const lastRealIdxB = pointsB.map(p => p.real).lastIndexOf(true);
 
-  // Stats Logic
-  const moodDiff = lastA - lastB;
-  const alignmentPct = partnerAData.length > 0 && partnerBData.length > 0 
-    ? Math.round((1 - Math.abs(moodDiff) / 9) * 100)
-    : 0;
-
-  let diffText = 'Waiting for data';
-  let diffColor = Theme.colors.textSecondary;
-  if (partnerAData.length > 0 && partnerBData.length > 0) {
-    if (Math.abs(moodDiff) <= 1) { diffText = 'You two are in sync right now 💫'; diffColor = '#7AAB8A'; }
-    else if (moodDiff > 0) { diffText = "You're feeling better than your partner"; diffColor = PARTNER_A_COLOR; }
-    else { diffText = "Your partner is feeling better than you"; diffColor = PARTNER_B_COLOR; }
-  }
-
   return (
-    <View style={styles.wrapper}>
-      {/* ── Summary Headers ── */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Mood Over Time</Text>
-        <Text style={styles.subtitle}>1 = low · 10 = high</Text>
-      </View>
-
-      <View style={styles.statsCard}>
-        {/* You Column */}
-        <View style={styles.statCol}>
-          <Text style={styles.statLabel}>You</Text>
-          <Text style={[styles.statValue, { color: PARTNER_A_COLOR }]}>
-            {partnerAData.length > 0 ? `${getMoodEmoji(lastA)} ${lastA}` : '—'}
-          </Text>
-          {partnerAData.length > 0 && <Text style={styles.statAvg}>Avg {avgA}</Text>}
-        </View>
-
-        {/* Sync Metric */}
-        {partnerAData.length > 0 && partnerBData.length > 0 && (
-          <View style={styles.syncRingObj}>
-             <View style={styles.syncRing}>
-                <Text style={styles.syncPct}>{alignmentPct}%</Text>
-                <Text style={styles.syncLabel}>Sync</Text>
-             </View>
-          </View>
-        )}
-
-        {/* Partner Column */}
-        <View style={styles.statColRight}>
-          <Text style={styles.statLabel}>Partner</Text>
-          <Text style={[styles.statValue, { color: PARTNER_B_COLOR }]}>
-            {partnerBData.length > 0 ? `${lastB} ${getMoodEmoji(lastB)}` : '—'}
-          </Text>
-          {partnerBData.length > 0 && <Text style={styles.statAvg}>Avg {avgB}</Text>}
-        </View>
-      </View>
-
-      {/* ── SVG Line Chart ── */}
-      <View style={styles.chartArea}>
-        <Svg width={chartW} height={chartH}>
-          {/* Grid Lines */}
-          {yAxisTicks.map((tick, i) => (
-            <React.Fragment key={`grid-${i}`}>
-              <Line 
-                x1={padL} x2={chartW - padR} 
-                y1={tick.y} y2={tick.y} 
-                stroke="#EDE8E4" strokeWidth="1" strokeDasharray="4,4" 
-              />
-              <SvgText
-                x={padL - 6} y={tick.y + 3}
-                fill={Theme.colors.textSecondary}
-                fontSize="10"
-                fontFamily={Theme.fonts.body}
-                textAnchor="end"
-                opacity={0.6}
-              >
-                {tick.val}
-              </SvgText>
-            </React.Fragment>
-          ))}
-
-          {/* Paths */}
-          {pathB && <Path d={pathB} fill="none" stroke={PARTNER_B_COLOR} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />}
-          {pathA && <Path d={pathA} fill="none" stroke={PARTNER_A_COLOR} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />}
-
-          {/* Dots A */}
-          {pointsA.map((p, i) => {
-            if (!p.real) return null;
-            const isLast = i === lastRealIdxA;
-            return (
-              <React.Fragment key={`dotA-${i}`}>
-                <Circle cx={p.x} cy={p.y} r={isLast ? 6 : 4} fill={PARTNER_A_COLOR} />
-                {isLast && <Circle cx={p.x} cy={p.y} r={6} fill="none" stroke="#FFFFFF" strokeWidth="2.5" />}
-              </React.Fragment>
-            );
-          })}
-
-          {/* Dots B */}
-          {pointsB.map((p, i) => {
-            if (!p.real) return null;
-            const isLast = i === lastRealIdxB;
-            return (
-              <React.Fragment key={`dotB-${i}`}>
-                <Circle cx={p.x} cy={p.y} r={isLast ? 6 : 4} fill={PARTNER_B_COLOR} />
-                {isLast && <Circle cx={p.x} cy={p.y} r={6} fill="none" stroke="#FFFFFF" strokeWidth="2.5" />}
-              </React.Fragment>
-            );
-          })}
-
-          {/* X Axis Labels */}
-          {xAxisTicks.map((tick: any, i) => (
+    <View style={[styles.container, { backgroundColor, borderRadius: 16, padding: 8 }]}>
+      <Svg width={chartW} height={chartH}>
+        {/* Grid Lines */}
+        {yAxisTicks.map((tick, i) => (
+          <React.Fragment key={`grid-${i}`}>
+            <Line 
+              x1={padL} x2={chartW - padR} 
+              y1={tick.y} y2={tick.y} 
+              stroke={gridColor} strokeWidth="1" strokeDasharray="4,4" 
+              opacity={isDark ? 0.5 : 1}
+            />
             <SvgText
-              key={`x-${i}`}
-              x={tick.x} y={chartH - 5}
-              fill={Theme.colors.textSecondary}
+              x={padL - 6} y={tick.y + 3}
+              fill={labelColor}
               fontSize="10"
               fontFamily={Theme.fonts.body}
-              textAnchor="middle"
+              textAnchor="end"
               opacity={0.6}
             >
-              {tick.label}
+              {tick.val}
             </SvgText>
-          ))}
-        </Svg>
-      </View>
+          </React.Fragment>
+        ))}
 
-      {/* ── Conclusion Pill ── */}
-      {partnerAData.length > 0 && partnerBData.length > 0 && (
-        <View style={styles.conclusionPill}>
-          <Text style={[styles.conclusionText, { color: diffColor }]}>
-            {diffText}
-          </Text>
-        </View>
-      )}
+        {/* Paths */}
+        {pathB && (
+          <Path 
+            d={pathB} 
+            fill="none" 
+            stroke={partnerColor} 
+            strokeWidth="3" 
+            strokeLinejoin="round" 
+            strokeLinecap="round" 
+            opacity={0.8}
+          />
+        )}
+        {pathA && (
+          <Path 
+            d={pathA} 
+            fill="none" 
+            stroke={userColor} 
+            strokeWidth="3" 
+            strokeLinejoin="round" 
+            strokeLinecap="round" 
+          />
+        )}
+
+        {/* Dots A */}
+        {pointsA.map((p, i) => {
+          if (!p.real) return null;
+          const isLast = i === lastRealIdxA;
+          return (
+            <React.Fragment key={`dotA-${i}`}>
+              <Circle cx={p.x} cy={p.y} r={isLast ? 6 : 4} fill={userColor} />
+              {isLast && (
+                <Circle cx={p.x} cy={p.y} r={6} fill="none" stroke={isDark ? "#FFFFFF" : colors.bgCard} strokeWidth="2" />
+              )}
+            </React.Fragment>
+          );
+        })}
+
+        {/* Dots B */}
+        {pointsB.map((p, i) => {
+          if (!p.real) return null;
+          const isLast = i === lastRealIdxB;
+          return (
+            <React.Fragment key={`dotB-${i}`}>
+              <Circle cx={p.x} cy={p.y} r={isLast ? 6 : 4} fill={partnerColor} />
+              {isLast && (
+                <Circle cx={p.x} cy={p.y} r={6} fill="none" stroke={isDark ? "#FFFFFF" : colors.bgCard} strokeWidth="2" />
+              )}
+            </React.Fragment>
+          );
+        })}
+
+        {/* X Axis Labels */}
+        {xAxisTicks.map((tick: any, i) => (
+          <SvgText
+            key={`x-${i}`}
+            x={tick.x} y={chartH - 5}
+            fill={labelColor}
+            fontSize="9"
+            fontFamily={Theme.fonts.body}
+            textAnchor="middle"
+            opacity={0.6}
+          >
+            {tick.label}
+          </SvgText>
+        ))}
+      </Svg>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  wrapper: {
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.borderRadius.lg,
-    padding: Theme.spacing.md,
-    marginBottom: 16,
-    ...Theme.shadows.soft,
+  container: {
+    alignItems: 'center',
+    marginTop: 8,
   },
   emptyContainer: {
-    padding: Theme.spacing.xl,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: 16,
-    ...Theme.shadows.soft,
+    padding: 20,
+    width: '100%',
+  },
+  emptyRing: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 2,
   },
   emptyText: {
     fontFamily: Theme.fonts.body,
-    fontSize: 14,
-    color: Theme.colors.textSecondary,
-  },
-  header: {
-    marginBottom: 12,
-  },
-  title: {
-    fontFamily: Theme.fonts.headingBold,
-    fontSize: 16,
-    color: Theme.colors.textPrimary,
-    marginBottom: 2,
-  },
-  subtitle: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 12,
-    color: Theme.colors.textSecondary,
-  },
-  statsCard: {
-    backgroundColor: '#FAF8F5',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#EDE8E4',
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  statCol: {
-    alignItems: 'flex-start',
-    flex: 1,
-  },
-  statColRight: {
-    alignItems: 'flex-end',
-    flex: 1,
-  },
-  statLabel: {
-    fontFamily: Theme.fonts.bodyBold,
-    fontSize: 12,
-    color: Theme.colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  statValue: {
-    fontFamily: Theme.fonts.headingBold,
-    fontSize: 22,
-    letterSpacing: -0.5,
-  },
-  statAvg: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 11,
-    color: Theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  syncRingObj: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  syncRing: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: '#7AAB8A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Theme.shadows.soft,
-  },
-  syncPct: {
-    fontFamily: Theme.fonts.headingBold,
-    fontSize: 14,
-    color: '#333',
-    transform: [{ translateY: 2 }],
-  },
-  syncLabel: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 9,
-    color: Theme.colors.textSecondary,
-    textTransform: 'uppercase',
-  },
-  chartArea: {
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  conclusionPill: {
-    backgroundColor: '#FFF8F4',
-    borderWidth: 1,
-    borderColor: '#EDE8E4',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-  },
-  conclusionText: {
-    fontFamily: Theme.fonts.bodyBold,
     fontSize: 13,
-  },
+    textAlign: 'center',
+    maxWidth: '80%',
+    lineHeight: 20,
+  }
 });

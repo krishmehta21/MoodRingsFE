@@ -1,17 +1,17 @@
 export const Theme = {
   colors: {
-    background: '#FAF8F5',
-    surface: '#FFFFFF',
-    partnerA: '#7B9EBE', // Soft slate blue
-    partnerB: '#D4908A', // Dusty rose/blush
-    accent: '#C4764A',    // Warm terracotta
-    textPrimary: '#2C2420',
-    textSecondary: '#9B8E89',
-    success: '#7FAF8A',   // Low stress
-    warning: '#E8B86D',   // Mid stress
-    alert: '#C4764A',     // High stress
-    tagBackground: '#F0EBE8',
-    border: '#EDE8E4',
+    background: '#FFF7F3',
+    surface: '#FDECEF',
+    partnerA: '#E8A0A7', // Soft slate blue (Repurposed)
+    partnerB: '#CDB4DB', // Dusty rose/blush (Repurposed)
+    accent: '#E8A0A7',    // Warm terracotta
+    textPrimary: '#4A3A4F',
+    textSecondary: 'rgba(74,58,79,0.6)',
+    success: '#A8DADC',   // Low stress
+    warning: '#FFD166',   // Mid stress
+    alert: '#F28482',     // High stress
+    tagBackground: 'rgba(74,58,79,0.05)',
+    border: 'rgba(74,58,79,0.1)',
     shadow: 'rgba(44, 36, 32, 0.06)',
   },
   fonts: {

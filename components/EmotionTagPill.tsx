@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface EmotionTagPillProps {
   label: string;
@@ -13,6 +14,8 @@ export const EmotionTagPill: React.FC<EmotionTagPillProps> = ({
   selected,
   onPress,
 }) => {
+  const { colors } = useTheme();
+
   return (
     <TouchableOpacity
       activeOpacity={0.7}
@@ -20,13 +23,15 @@ export const EmotionTagPill: React.FC<EmotionTagPillProps> = ({
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       style={[
         styles.pill,
-        selected && styles.selectedPill,
+        { backgroundColor: colors.bgTag, borderColor: 'transparent' },
+        selected && { backgroundColor: colors.bgTagSelected, borderColor: colors.borderAccent },
       ]}
     >
       <Text
         style={[
           styles.label,
-          selected && styles.selectedLabel,
+          { color: colors.textSecondary },
+          selected && { color: colors.accent, fontFamily: Theme.fonts.bodyMedium },
         ]}
       >
         {label}
@@ -37,26 +42,15 @@ export const EmotionTagPill: React.FC<EmotionTagPillProps> = ({
 
 const styles = StyleSheet.create({
   pill: {
-    backgroundColor: Theme.colors.tagBackground,
     paddingHorizontal: Theme.spacing.md,
     paddingVertical: Theme.spacing.xs,
     borderRadius: Theme.borderRadius.pill,
     marginRight: Theme.spacing.xs,
     marginBottom: Theme.spacing.xs,
     borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  selectedPill: {
-    backgroundColor: Theme.colors.surface,
-    borderColor: Theme.colors.accent,
   },
   label: {
     fontFamily: Theme.fonts.body,
     fontSize: 14,
-    color: Theme.colors.textSecondary,
-  },
-  selectedLabel: {
-    color: Theme.colors.accent,
-    fontFamily: Theme.fonts.bodyMedium,
   },
 });

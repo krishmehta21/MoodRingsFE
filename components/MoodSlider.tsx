@@ -3,12 +3,17 @@ import { View, Text, StyleSheet } from 'react-native';
 import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
 import { Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface MoodSliderProps {
   value: number;
   onValueChange: (value: number) => void;
   minimumValue?: number;
   maximumValue?: number;
+  minimumTrackTintColor?: string;
+  maximumTrackTintColor?: string;
+  thumbTintColor?: string;
+  hideLabels?: boolean;
 }
 
 export const MoodSlider: React.FC<MoodSliderProps> = ({
@@ -16,7 +21,13 @@ export const MoodSlider: React.FC<MoodSliderProps> = ({
   onValueChange,
   minimumValue = 1,
   maximumValue = 10,
+  minimumTrackTintColor,
+  maximumTrackTintColor,
+  thumbTintColor,
+  hideLabels = false,
 }) => {
+  const { colors } = useTheme();
+
   const handleValueChange = (newValue: number) => {
     const roundedValue = Math.round(newValue);
     if (roundedValue !== value) {
@@ -31,11 +42,13 @@ export const MoodSlider: React.FC<MoodSliderProps> = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.labelContainer}>
-        <Text style={styles.label}>Low</Text>
-        <Text style={styles.value}>{value}</Text>
-        <Text style={styles.label}>High</Text>
-      </View>
+      {!hideLabels && (
+        <View style={styles.labelContainer}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Low</Text>
+          <Text style={[styles.value, { color: colors.textPrimary }]}>{value}</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>High</Text>
+        </View>
+      )}
       <Slider
         style={styles.slider}
         minimumValue={minimumValue}
@@ -43,9 +56,9 @@ export const MoodSlider: React.FC<MoodSliderProps> = ({
         step={1}
         value={value}
         onValueChange={handleValueChange}
-        minimumTrackTintColor={Theme.colors.accent}
-        maximumTrackTintColor={Theme.colors.tagBackground}
-        thumbTintColor={Theme.colors.accent}
+        minimumTrackTintColor={minimumTrackTintColor || colors.accent}
+        maximumTrackTintColor={maximumTrackTintColor || colors.borderDefault}
+        thumbTintColor={thumbTintColor || colors.accent}
       />
     </View>
   );
@@ -65,14 +78,12 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: Theme.fonts.body,
     fontSize: 14,
-    color: Theme.colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   value: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 32,
-    color: Theme.colors.textPrimary,
   },
   slider: {
     width: '100%',

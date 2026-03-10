@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Theme } from '../constants/theme';
-import { EmotionTagPill } from './EmotionTagPill';
+import { useTheme } from '../context/ThemeContext';
 
 interface PartnerStatus {
   name: string;
@@ -19,28 +19,30 @@ export const PartnerStatusCard: React.FC<PartnerStatusCardProps> = ({
   userStatus,
   partnerStatus,
 }) => {
+  const { colors } = useTheme();
+
   const renderStatus = (status: PartnerStatus, isLeft: boolean) => (
-    <View style={[styles.statusColumn, isLeft ? styles.borderRight : null]}>
+    <View style={[styles.statusColumn, isLeft ? { borderRightWidth: 1, borderRightColor: colors.borderDefault } : null]}>
       <Text style={[styles.partnerName, { color: status.color }]}>{status.name}</Text>
       <View style={styles.scoreContainer}>
-        <Text style={styles.scoreText}>{status.score ?? '-'}</Text>
-        <Text style={styles.scoreLabel}>Mood</Text>
+        <Text style={[styles.scoreText, { color: colors.textPrimary }]}>{status.score ?? '-'}</Text>
+        <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>Mood</Text>
       </View>
       <View style={styles.tagList}>
         {status.tags.slice(0, 3).map(tag => (
-          <View key={tag} style={styles.miniTag}>
-            <Text style={styles.miniTagText}>{tag}</Text>
+          <View key={tag} style={[styles.miniTag, { backgroundColor: colors.bgTag }]}>
+            <Text style={[styles.miniTagText, { color: colors.textSecondary }]}>{tag}</Text>
           </View>
         ))}
         {status.tags.length === 0 && (
-          <Text style={styles.noTags}>No tags today</Text>
+          <Text style={[styles.noTags, { color: colors.textSecondary }]}>No tags today</Text>
         )}
       </View>
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bgCard }]}>
       {renderStatus(userStatus, true)}
       {renderStatus(partnerStatus, false)}
     </View>
@@ -50,7 +52,6 @@ export const PartnerStatusCard: React.FC<PartnerStatusCardProps> = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: Theme.colors.surface,
     borderRadius: Theme.borderRadius.lg,
     padding: Theme.spacing.md,
     ...Theme.shadows.soft,
@@ -60,10 +61,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingVertical: Theme.spacing.sm,
-  },
-  borderRight: {
-    borderRightWidth: 1,
-    borderRightColor: Theme.colors.border,
   },
   partnerName: {
     fontFamily: Theme.fonts.heading,
@@ -77,12 +74,10 @@ const styles = StyleSheet.create({
   scoreText: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 32,
-    color: Theme.colors.textPrimary,
   },
   scoreLabel: {
     fontFamily: Theme.fonts.body,
     fontSize: 10,
-    color: Theme.colors.textSecondary,
     textTransform: 'uppercase',
   },
   tagList: {
@@ -92,19 +87,16 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   miniTag: {
-    backgroundColor: Theme.colors.tagBackground,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
   },
   miniTagText: {
     fontSize: 10,
-    color: Theme.colors.textSecondary,
     fontFamily: Theme.fonts.body,
   },
   noTags: {
     fontSize: 10,
     fontStyle: 'italic',
-    color: Theme.colors.textSecondary,
   },
 });

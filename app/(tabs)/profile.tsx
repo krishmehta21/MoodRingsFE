@@ -15,6 +15,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Theme } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
+import { useTheme, ThemeMode } from '../../context/ThemeContext';
+import { DarkBackground } from '../../components/DarkBackground';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -25,25 +29,34 @@ type MenuRowProps = {
   onPress?: () => void;
   right?: React.ReactNode;
   destructive?: boolean;
+  colors: any;
 };
 
-function MenuRow({ icon, label, sublabel, onPress, right, destructive }: MenuRowProps) {
+function MenuRow({ icon, label, sublabel, onPress, right, destructive, colors }: MenuRowProps) {
   return (
     <TouchableOpacity
-      style={styles.menuItem}
+      style={[styles.menuItem, { backgroundColor: 'transparent' }]}
       onPress={onPress}
       activeOpacity={onPress ? 0.6 : 1}
       disabled={!onPress && !right}
     >
-      <View style={[styles.menuIconContainer, destructive && styles.menuIconDestructive]}>
-        <Ionicons name={icon} size={18} color={destructive ? '#E57373' : Theme.colors.accent} />
+      <View style={[
+        styles.menuIconContainer, 
+        { backgroundColor: 'rgba(255,255,255,0.03)' }, 
+        destructive && { backgroundColor: 'transparent' }
+      ]}>
+        <Ionicons 
+          name={icon} 
+          size={18} 
+          color={destructive ? colors.textMuted : colors.accent} 
+        />
       </View>
       <View style={styles.menuTextBlock}>
-        <Text style={[styles.menuText, destructive && styles.menuTextDestructive]}>{label}</Text>
-        {sublabel ? <Text style={styles.menuSubLabel}>{sublabel}</Text> : null}
+        <Text style={[styles.menuText, { color: colors.textPrimary }, destructive && { color: colors.textSecondary }]}>{label}</Text>
+        {sublabel ? <Text style={[styles.menuSubLabel, { color: colors.textMuted }]}>{sublabel}</Text> : null}
       </View>
       {right !== undefined ? right : (onPress && !destructive ? (
-        <Ionicons name="chevron-forward" size={16} color={Theme.colors.textSecondary} />
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
       ) : null)}
     </TouchableOpacity>
   );
@@ -51,7 +64,9 @@ function MenuRow({ icon, label, sublabel, onPress, right, destructive }: MenuRow
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, updateUser } = useAuth();
+  const { mode: currentMode, setMode, colors, isDark } = useTheme();
+
   const [partnerData, setPartnerData] = useState<any>(null);
   const [profileData, setProfileData] = useState<any>(null);
   const [myStreak, setMyStreak] = useState(0);
@@ -66,11 +81,25 @@ export default function ProfileScreen() {
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarLoading, setCalendarLoading] = useState(false);
 
   useEffect(() => {
     fetchProfileData();
+    fetchCalendarStatus();
     loadPreferences();
   }, [user]);
+
+  const fetchCalendarStatus = async () => {
+    if (!user) return;
+    try {
+      const resp = await fetch(`${API_URL}/calendar/status?user_id=${user.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await resp.json();
+      setCalendarConnected(data.connected);
+    } catch { }
+  };
 
   const fetchProfileData = async () => {
     if (!user) return;
@@ -123,17 +152,35 @@ export default function ProfileScreen() {
     try {
       const resp = await fetch(
         `${API_URL}/auth/unlink?user_id=${user.id}`,
-        { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }
+        { 
+          method: 'DELETE', 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
       );
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || 'Unlink failed.');
+      
+      if (!resp.ok) {
+        throw new Error(data.detail || 'Unlink failed.');
+      }
+
+      // 1. Clear partner data locally
       setPartnerData(null);
       setShowPartnerPanel(false);
       setUnlinkConfirmVisible(false);
-      // Sign out after short delay so state updates are visible
-      setTimeout(() => logout(), 800);
+      
+      // 2. Update global user state
+      await updateUser({ partner_id: null });
+      
+      // 3. Navigate back to pairing screen
+      router.replace('/(auth)/pairing');
+      
     } catch (e: any) {
-      setUnlinkError(e.message || 'Something went wrong. Please try again.');
+      const errorMsg = e.message || 'Something went wrong. Please try again.';
+      setUnlinkError(errorMsg);
+      Alert.alert('Unlink Failed', errorMsg);
     } finally {
       setUnlinkLoading(false);
     }
@@ -173,6 +220,55 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleConnectCalendar = async () => {
+    if (!user) return;
+    setCalendarLoading(true);
+    try {
+      const resp = await fetch(`${API_URL}/calendar/connect`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          access_token: 'mock_google_access_token_' + Date.now(),
+          refresh_token: 'mock_refresh_token'
+        })
+      });
+      
+      if (resp.ok) {
+        setCalendarConnected(true);
+        Alert.alert('Success', 'Google Calendar connected! We will now analyze your schedule for stress patterns.');
+      } else {
+        throw new Error('Failed to connect.');
+      }
+    } catch (e: any) {
+      Alert.alert('Connection Error', e.message);
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
+  const handleDisconnectCalendar = async () => {
+    if (!user) return;
+    setCalendarLoading(true);
+    try {
+      const resp = await fetch(`${API_URL}/calendar/disconnect?user_id=${user.id}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (resp.ok) {
+        setCalendarConnected(false);
+        Alert.alert('Disconnected', 'Google Calendar has been unlinked.');
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to disconnect.');
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
   const displayName = profileData?.display_name || user?.email?.split('@')[0] || 'Unknown';
   const displayEmail = user?.email?.includes('@placeholder.com')
     ? 'Anonymous account'
@@ -188,353 +284,429 @@ export default function ProfileScreen() {
     return (
       <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
         {profileData.relationship_type && (
-          <View style={styles.relationshipTag}>
-            <Text style={styles.relationshipTagText}>
+          <View style={[styles.relationshipTag, { backgroundColor: colors.bgTag }]}>
+            <Text style={[styles.relationshipTagText, { color: colors.textPrimary }]}>
               {profileData.relationship_type === 'Married' || profileData.relationship_type === 'Engaged' ? '💍 ' : ''}
               {profileData.relationship_type}
             </Text>
           </View>
         )}
         {profileData.together_duration && (
-          <View style={styles.relationshipTag}>
-            <Text style={styles.relationshipTagText}>{profileData.together_duration}</Text>
+          <View style={[styles.relationshipTag, { backgroundColor: colors.bgTag }]}>
+            <Text style={[styles.relationshipTagText, { color: colors.textPrimary }]}>{profileData.together_duration}</Text>
           </View>
         )}
       </View>
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
+  const renderThemeOption = (label: string, mode: ThemeMode, icon: any) => {
+    const isSelected = currentMode === mode;
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.themePill, 
+          { backgroundColor: colors.bgTag },
+          isSelected && { backgroundColor: colors.bgTagSelected, borderColor: colors.borderAccent }
+        ]} 
+        onPress={() => setMode(mode)}
       >
-        <Text style={styles.header}>Profile</Text>
+        <Ionicons name={icon} size={16} color={isSelected ? colors.accent : colors.textSecondary} />
+        <Text style={[
+          styles.themePillText, 
+          { color: colors.textSecondary },
+          isSelected && { color: colors.accent, fontFamily: Theme.fonts.bodyBold }
+        ]}>{label}</Text>
+      </TouchableOpacity>
+    );
+  };
 
-        {/* Profile card */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarRing}>
-            <View style={styles.avatarInner}>
-              <Text style={styles.avatarText}>{initials}</Text>
+  return (
+    <DarkBackground>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={[styles.header, { color: colors.textPrimary }]}>Profile</Text>
+
+          {/* Profile card */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 40, paddingHorizontal: 10 }}>
+            {/* My Avatar */}
+            <View style={{ alignItems: 'center', flex: 1 }}>
+              <View style={[styles.avatarRing, { borderColor: '#B8A1E3' }]}>
+                <View style={[styles.avatarInner, { backgroundColor: 'rgba(184,161,227,0.15)' }]}>
+                  <Text style={[styles.avatarText, { color: '#B8A1E3' }]}>{initials}</Text>
+                </View>
+              </View>
+              <Text style={{ fontFamily: Theme.fonts.headingBold, fontSize: 16, color: colors.textPrimary, marginTop: 8 }} numberOfLines={1}>{displayName}</Text>
+              <Text style={{ fontFamily: Theme.fonts.body, fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{myStreak} days 🔥</Text>
             </View>
-          </View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
-            <Text style={styles.profileEmail} numberOfLines={1}>{displayEmail}</Text>
-            <View style={styles.streakRow}>
-              <Ionicons name="flame" size={14} color={Theme.colors.accent} />
-              <Text style={styles.streakText}>{myStreak} day streak</Text>
+
+            {/* Gradient Connector */}
+            <View style={{ flex: 1, height: 2, marginHorizontal: 8, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+               {partnerData && (
+                <LinearGradient colors={['#B8A1E3', '#F7A6C4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1, borderRadius: 1 }} />
+               )}
             </View>
-          </View>
-          {profileLoading ? (
-            <ActivityIndicator size="small" color={Theme.colors.accent} />
-          ) : (
-            <View style={[
-              styles.partnerBadge,
-              { backgroundColor: partnerData ? '#F0F7F2' : '#FFF5F0' }
-            ]}>
-              <Ionicons
-                name={partnerData ? 'heart' : 'heart-outline'}
-                size={12}
-                color={partnerData ? '#5A9A6A' : Theme.colors.textSecondary}
-              />
-              <Text style={[
-                styles.partnerBadgeText,
-                { color: partnerData ? '#5A9A6A' : Theme.colors.textSecondary }
-              ]}>
-                {partnerData ? 'Linked' : 'Solo'}
+
+            {/* Partner Avatar */}
+            <View style={{ alignItems: 'center', flex: 1 }}>
+              <View style={[styles.avatarRing, { borderColor: partnerData ? '#F7A6C4' : 'rgba(230,233,240,0.15)' }]}>
+                <View style={[styles.avatarInner, { backgroundColor: partnerData ? 'rgba(247,166,196,0.15)' : 'rgba(230,233,240,0.05)' }]}>
+                  {profileLoading ? (
+                    <ActivityIndicator size="small" color="#F7A6C4" />
+                  ) : (
+                    <Text style={[styles.avatarText, { color: partnerData ? '#F7A6C4' : colors.textMuted }]}>
+                      {partnerData ? (partnerData.display_name ? partnerData.display_name[0].toUpperCase() : '?') : '+'}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <Text style={{ fontFamily: Theme.fonts.headingBold, fontSize: 16, color: colors.textPrimary, marginTop: 8 }} numberOfLines={1}>
+                {partnerData ? partnerData.display_name || 'Partner' : 'Solo'}
+              </Text>
+              <Text style={{ fontFamily: Theme.fonts.body, fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
+                {partnerData ? 'Linked' : 'Not linked'}
               </Text>
             </View>
-          )}
-        </View>
+          </View>
 
-        {/* Notifications */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
-          <MenuRow
-            icon="notifications-outline"
-            label="Push Notifications"
-            sublabel="Suggestions and relationship alerts"
-            right={
-              <Switch
-                value={notificationsEnabled}
-                onValueChange={(v) => { setNotificationsEnabled(v); savePreference('pref_notifications', v); }}
-                trackColor={{ false: Theme.colors.border, true: '#C8E6CF' }}
-                thumbColor={notificationsEnabled ? '#5A9A6A' : '#f4f3f4'}
-              />
-            }
-          />
-          <MenuRow
-            icon="time-outline"
-            label="Daily Check-in Reminder"
-            sublabel="Nudge to log your mood each day"
-            right={
-              <Switch
-                value={dailyReminderEnabled}
-                onValueChange={(v) => { setDailyReminderEnabled(v); savePreference('pref_daily_reminder', v); }}
-                trackColor={{ false: Theme.colors.border, true: '#C8E6CF' }}
-                thumbColor={dailyReminderEnabled ? '#5A9A6A' : '#f4f3f4'}
-              />
-            }
-          />
-        </View>
-
-        {/* Partner section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Partner</Text>
-
-          <TouchableOpacity
-            style={[styles.menuItem, showPartnerPanel && styles.menuItemActive]}
-            onPress={() => {
-              setShowPartnerPanel(v => !v);
-              setUnlinkConfirmVisible(false);
-              setUnlinkError(null);
-            }}
-            activeOpacity={0.6}
-          >
-            <View style={styles.menuIconContainer}>
-              <Ionicons name="heart-outline" size={18} color={Theme.colors.accent} />
+          {/* Appearance Section */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textAccentSoft }]}>Appearance</Text>
+            <View style={[styles.themeSelector, { backgroundColor: colors.bgCard, borderColor: colors.borderDefault }]}>
+              {renderThemeOption('Light', 'light', 'sunny-outline')}
+              {renderThemeOption('Dark', 'dark', 'moon-outline')}
+              {renderThemeOption('System', 'system', 'settings-outline')}
             </View>
-            <View style={styles.menuTextBlock}>
-              <Text style={styles.menuText}>Partner Status</Text>
-              <Text style={styles.menuSubLabel}>
-                {partnerData ? 'Connected — tap to manage' : 'Not linked to a partner'}
-              </Text>
-            </View>
-            <Ionicons
-              name={showPartnerPanel ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={Theme.colors.textSecondary}
+          </View>
+
+          {/* Notifications */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textAccentSoft }]}>Notifications</Text>
+            <MenuRow
+              icon="notifications-outline"
+              label="Push Notifications"
+              sublabel="Suggestions and relationship alerts"
+              colors={colors}
+              right={
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={(v) => { setNotificationsEnabled(v); savePreference('pref_notifications', v); }}
+                  trackColor={{ false: colors.borderDefault, true: '#B8A1E3' }}
+                  thumbColor={notificationsEnabled ? colors.accentSage : colors.textMuted}
+                />
+              }
             />
-          </TouchableOpacity>
+            <MenuRow
+              icon="time-outline"
+              label="Daily Check-in Reminder"
+              sublabel="Nudge to log your mood each day"
+              colors={colors}
+              right={
+                <Switch
+                  value={dailyReminderEnabled}
+                  onValueChange={(v) => { setDailyReminderEnabled(v); savePreference('pref_daily_reminder', v); }}
+                  trackColor={{ false: colors.borderDefault, true: '#B8A1E3' }}
+                  thumbColor={dailyReminderEnabled ? colors.accentSage : colors.textMuted}
+                />
+              }
+            />
+          </View>
 
-          {showPartnerPanel && (
-            <View style={styles.partnerPanel}>
-              {partnerData ? (
-                <>
-                  <View style={styles.partnerPanelHeader}>
-                    <View style={styles.partnerPanelDot} />
-                    <Text style={styles.partnerPanelStatus}>
-                      Connected with {partnerData.display_name || 'your partner'}
+          {/* Partner section */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textAccentSoft }]}>Partner</Text>
+
+            <TouchableOpacity
+              style={[
+                styles.menuItem, 
+                { backgroundColor: colors.bgCard, borderColor: colors.borderDefault },
+                showPartnerPanel && styles.menuItemActive
+              ]}
+              onPress={() => {
+                setShowPartnerPanel(v => !v);
+                setUnlinkConfirmVisible(false);
+                setUnlinkError(null);
+              }}
+              activeOpacity={0.6}
+            >
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.bgTag }]}>
+                <Ionicons name="heart-outline" size={18} color={colors.accent} />
+              </View>
+              <View style={styles.menuTextBlock}>
+                <Text style={[styles.menuText, { color: colors.textPrimary }]}>Partner Status</Text>
+                <Text style={[styles.menuSubLabel, { color: colors.textSecondary }]}>
+                  {partnerData ? 'Connected — tap to manage' : 'Not linked to a partner'}
+                </Text>
+              </View>
+              <Ionicons
+                name={showPartnerPanel ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+
+            {showPartnerPanel && (
+              <View style={[styles.partnerPanel, { backgroundColor: colors.bgCard, borderColor: colors.borderDefault }]}>
+                {partnerData ? (
+                  <>
+                    <View style={styles.partnerPanelHeader}>
+                      <View style={[styles.partnerPanelDot, { backgroundColor: colors.accentSage }]} />
+                      <Text style={[styles.partnerPanelStatus, { color: colors.accentSage }]}>
+                        Connected with {partnerData.display_name || 'your partner'}
+                      </Text>
+                    </View>
+                    {renderRelationshipTags()}
+                    <Text style={[styles.partnerPanelNote, { color: colors.textSecondary, marginTop: 14 }]}>
+                      You and your partner are sharing mood data. Both of you see the same dashboard and risk score.
+                    </Text>
+
+                    {/* ── Inline confirm flow — no Alert callbacks needed ── */}
+                    {!unlinkConfirmVisible ? (
+                      <TouchableOpacity
+                        style={[styles.unlinkButton, { backgroundColor: 'rgba(255,255,255,0.03)' }]}
+                        onPress={() => {
+                          setUnlinkConfirmVisible(true);
+                          setUnlinkError(null);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="unlink-outline" size={16} color={colors.textSecondary} />
+                        <Text style={[styles.unlinkButtonText, { color: colors.textSecondary }]}>Unlink Partner</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={[styles.unlinkConfirmBox, { backgroundColor: 'transparent', borderColor: colors.borderSubtle }]}>
+                        <Text style={[styles.unlinkConfirmTitle, { color: colors.textSecondary }]}>Are you sure?</Text>
+                        <Text style={[styles.unlinkConfirmBody, { color: colors.textSecondary }]}>
+                          This disconnects both accounts immediately. Your mood history is preserved.
+                        </Text>
+
+                        {unlinkError && (
+                          <Text style={[styles.unlinkErrorText, { color: colors.textAccent }]}>{unlinkError}</Text>
+                        )}
+
+                        <View style={styles.unlinkConfirmButtons}>
+                          <TouchableOpacity
+                            style={[styles.unlinkCancelBtn, { backgroundColor: colors.bgCard, borderColor: colors.borderDefault }]}
+                            onPress={() => {
+                              setUnlinkConfirmVisible(false);
+                              setUnlinkError(null);
+                            }}
+                            disabled={unlinkLoading}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.unlinkCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.unlinkConfirmBtn, { backgroundColor: colors.textAccent }, unlinkLoading && { opacity: 0.6 }]}
+                            onPress={performUnlink}
+                            disabled={unlinkLoading}
+                            activeOpacity={0.7}
+                          >
+                            {unlinkLoading ? (
+                              <ActivityIndicator size="small" color={colors.bgPrimary} />
+                            ) : (
+                              <Text style={[styles.unlinkConfirmText, { color: colors.bgPrimary }]}>Yes, Unlink</Text>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.partnerPanelNote, { color: colors.textSecondary }]}>
+                      You're not linked to anyone. Go to the pairing screen to connect with your partner.
+                    </Text>
+                    <View style={styles.partnerPanelNote2Row}>
+                      <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+                      <Text style={[styles.partnerPanelNote2, { color: colors.textMuted }]}>Sign out and back in to start pairing.</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            )}
+
+            <MenuRow
+              icon="shield-checkmark-outline"
+              label="What Your Partner Sees"
+              sublabel="Scores & tags only — never your journal"
+              onPress={handlePrivacyInfo}
+              colors={colors}
+            />
+          </View>
+
+          {/* Integrations Section */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textAccentSoft }]}>Integrations</Text>
+            <MenuRow
+              icon="calendar-outline"
+              label="Google Calendar"
+              sublabel={calendarConnected ? "Connected" : "Analyze your schedule for stress"}
+              colors={colors}
+              onPress={calendarConnected ? handleDisconnectCalendar : handleConnectCalendar}
+              right={
+                calendarLoading ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <View style={[
+                    styles.connBadge, 
+                    { backgroundColor: calendarConnected ? 'rgba(122,171,138,0.1)' : 'rgba(255,255,255,0.03)' }
+                  ]}>
+                    <Text style={[
+                      styles.connBadgeText, 
+                      { color: calendarConnected ? colors.accentSage : colors.textMuted }
+                    ]}>
+                      {calendarConnected ? 'LINKED' : 'CONNECT'}
                     </Text>
                   </View>
-                  {renderRelationshipTags()}
-                  <Text style={[styles.partnerPanelNote, { marginTop: 14 }]}>
-                    You and your partner are sharing mood data. Both of you see the same dashboard and risk score.
-                  </Text>
-
-                  {/* ── Inline confirm flow — no Alert callbacks needed ── */}
-                  {!unlinkConfirmVisible ? (
-                    <TouchableOpacity
-                      style={styles.unlinkButton}
-                      onPress={() => {
-                        setUnlinkConfirmVisible(true);
-                        setUnlinkError(null);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="unlink-outline" size={16} color="#E57373" />
-                      <Text style={styles.unlinkButtonText}>Unlink Partner</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.unlinkConfirmBox}>
-                      <Text style={styles.unlinkConfirmTitle}>Are you sure?</Text>
-                      <Text style={styles.unlinkConfirmBody}>
-                        This disconnects both accounts immediately. Your mood history is preserved.
-                      </Text>
-
-                      {unlinkError && (
-                        <Text style={styles.unlinkErrorText}>{unlinkError}</Text>
-                      )}
-
-                      <View style={styles.unlinkConfirmButtons}>
-                        <TouchableOpacity
-                          style={styles.unlinkCancelBtn}
-                          onPress={() => {
-                            setUnlinkConfirmVisible(false);
-                            setUnlinkError(null);
-                          }}
-                          disabled={unlinkLoading}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.unlinkCancelText}>Cancel</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.unlinkConfirmBtn, unlinkLoading && { opacity: 0.6 }]}
-                          onPress={performUnlink}
-                          disabled={unlinkLoading}
-                          activeOpacity={0.7}
-                        >
-                          {unlinkLoading ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                          ) : (
-                            <Text style={styles.unlinkConfirmText}>Yes, Unlink</Text>
-                          )}
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                </>
-              ) : (
-                <>
-                  <Text style={styles.partnerPanelNote}>
-                    You're not linked to anyone. Go to the pairing screen to connect with your partner.
-                  </Text>
-                  <View style={styles.partnerPanelNote2Row}>
-                    <Ionicons name="information-circle-outline" size={14} color={Theme.colors.textSecondary} />
-                    <Text style={styles.partnerPanelNote2}>Sign out and back in to start pairing.</Text>
-                  </View>
-                </>
-              )}
-            </View>
-          )}
-
-          <MenuRow
-            icon="shield-checkmark-outline"
-            label="What Your Partner Sees"
-            sublabel="Scores & tags only — never your journal"
-            onPress={handlePrivacyInfo}
-          />
-        </View>
-
-        {/* About */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About</Text>
-          <MenuRow
-            icon="document-text-outline"
-            label="Privacy Policy"
-            onPress={() => router.push('/privacy')}
-          />
-          <MenuRow
-            icon="help-circle-outline"
-            label="Support & Feedback"
-            sublabel="Get help or send us a note"
-            onPress={() => router.push('/support')}
-          />
-          <MenuRow
-            icon="information-circle-outline"
-            label="Version"
-            sublabel="MoodRings v1.0.0"
-          />
-        </View>
-
-        {/* Account */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          
-          {!signOutConfirmVisible ? (
-            <MenuRow
-              icon="log-out-outline"
-              label="Sign Out"
-              onPress={() => setSignOutConfirmVisible(true)}
-              destructive
+                )
+              }
             />
-          ) : (
-            <View style={styles.signOutBox}>
-              <Text style={styles.signOutTitle}>Are you sure you want to sign out?</Text>
-              <View style={styles.inlineButtonsRow}>
-                <TouchableOpacity
-                  style={styles.inlineCancelBtn}
-                  onPress={() => setSignOutConfirmVisible(false)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.inlineCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.inlineConfirmBtn}
-                  onPress={handleSignOut}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.inlineConfirmText}>Sign Out</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+          </View>
 
-          {!deleteConfirmVisible ? (
+          {/* About */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textAccentSoft }]}>About</Text>
             <MenuRow
-              icon="trash-outline"
-              label="Delete Account"
-              sublabel="Permanently removes all your data"
-              onPress={() => setDeleteConfirmVisible(true)}
-              destructive
+              icon="document-text-outline"
+              label="Privacy Policy"
+              onPress={() => router.push('/privacy')}
+              colors={colors}
             />
-          ) : (
-            <View style={styles.signOutBox}>
-              <Text style={styles.signOutTitle}>Delete everything?</Text>
-              <Text style={[styles.unlinkConfirmBody, { textAlign: 'center', marginBottom: 12 }]}>
-                This permanently erases your moods, tags, and unlinks your connection. This cannot be undone.
-              </Text>
-              {deleteError ? (
-                <Text style={[styles.unlinkErrorText, { textAlign: 'center' }]}>{deleteError}</Text>
-              ) : null}
-              <View style={styles.inlineButtonsRow}>
-                <TouchableOpacity
-                  style={styles.inlineCancelBtn}
-                  onPress={() => setDeleteConfirmVisible(false)}
-                  disabled={deleteLoading}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.inlineCancelText}>Keep Account</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.inlineConfirmBtn, deleteLoading && { opacity: 0.6 }]}
-                  onPress={performDeleteAccount}
-                  disabled={deleteLoading}
-                  activeOpacity={0.7}
-                >
-                  {deleteLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.inlineConfirmText}>Delete Forever</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
+            <MenuRow
+              icon="help-circle-outline"
+              label="Support & Feedback"
+              sublabel="Get help or send us a note"
+              onPress={() => router.push('/support')}
+              colors={colors}
+            />
+            <MenuRow
+              icon="information-circle-outline"
+              label="Version"
+              sublabel="MoodRings v1.0.0"
+              colors={colors}
+            />
+          </View>
 
-        <Text style={styles.version}>Built with purpose. Designed with consent.</Text>
-      </ScrollView>
-    </SafeAreaView>
+          {/* Account */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textAccentSoft }]}>Account</Text>
+            
+            {!signOutConfirmVisible ? (
+              <MenuRow
+                icon="log-out-outline"
+                label="Sign Out"
+                onPress={() => setSignOutConfirmVisible(true)}
+                destructive
+                colors={colors}
+              />
+            ) : (
+              <View style={[styles.signOutBox, { backgroundColor: `${colors.accent}10`, borderColor: colors.borderAccentSoft }]}>
+                <Text style={[styles.signOutTitle, { color: colors.textAccent }]}>Are you sure you want to sign out?</Text>
+                <View style={styles.inlineButtonsRow}>
+                  <TouchableOpacity
+                    style={[styles.inlineCancelBtn, { backgroundColor: colors.bgCard, borderColor: colors.borderDefault }]}
+                    onPress={() => setSignOutConfirmVisible(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.inlineCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.inlineConfirmBtn, { backgroundColor: colors.textAccent }]}
+                    onPress={handleSignOut}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.inlineConfirmText}>Sign Out</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {!deleteConfirmVisible ? (
+              <MenuRow
+                icon="trash-outline"
+                label="Delete Account"
+                sublabel="Permanently removes all your data"
+                onPress={() => setDeleteConfirmVisible(true)}
+                destructive
+                colors={colors}
+              />
+            ) : (
+              <View style={[styles.signOutBox, { backgroundColor: `${colors.accent}10`, borderColor: colors.borderAccentSoft }]}>
+                <Text style={[styles.signOutTitle, { color: colors.textAccent }]}>Delete everything?</Text>
+                <Text style={[styles.unlinkConfirmBody, { color: colors.textSecondary, textAlign: 'center', marginBottom: 12 }]}>
+                  This permanently erases your moods, tags, and unlinks your connection. This cannot be undone.
+                </Text>
+                {deleteError ? (
+                  <Text style={[styles.unlinkErrorText, { color: colors.textAccent, textAlign: 'center' }]}>{deleteError}</Text>
+                ) : null}
+                <View style={styles.inlineButtonsRow}>
+                  <TouchableOpacity
+                    style={[styles.inlineCancelBtn, { backgroundColor: colors.bgCard, borderColor: colors.borderDefault }]}
+                    onPress={() => setDeleteConfirmVisible(false)}
+                    disabled={deleteLoading}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.inlineCancelText, { color: colors.textSecondary }]}>Keep Account</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.inlineConfirmBtn, { backgroundColor: colors.textAccent }, deleteLoading && { opacity: 0.6 }]}
+                    onPress={performDeleteAccount}
+                    disabled={deleteLoading}
+                    activeOpacity={0.7}
+                  >
+                    {deleteLoading ? (
+                      <ActivityIndicator size="small" color={colors.bgPrimary} />
+                    ) : (
+                      <Text style={[styles.inlineConfirmText, { color: colors.bgPrimary }]}>Delete Forever</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+
+          <Text style={[styles.version, { color: colors.textMuted }]}>Built with purpose. Designed with consent.</Text>
+        </ScrollView>
+      </SafeAreaView>
+    </DarkBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
   },
   content: {
-    padding: Theme.spacing.lg,
+    padding: 20,
     paddingTop: 16,
     paddingBottom: 48,
   },
   header: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 30,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.xl,
+    marginBottom: 24,
   },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
-    padding: Theme.spacing.lg,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.xl,
-    ...Theme.shadows.soft,
+    padding: 20,
+    borderRadius: 24,
+    marginBottom: 24,
+    borderWidth: 1,
   },
   avatarRing: {
     width: 60,
     height: 60,
     borderRadius: 30,
     borderWidth: 2,
-    borderColor: Theme.colors.accent,
     padding: 2,
-    marginRight: Theme.spacing.md,
+    marginRight: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -542,14 +714,12 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#FAE8DC',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 22,
-    color: Theme.colors.accent,
   },
   profileInfo: {
     flex: 1,
@@ -558,13 +728,11 @@ const styles = StyleSheet.create({
   profileName: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 20,
-    color: Theme.colors.textPrimary,
     marginBottom: 2,
   },
   profileEmail: {
     fontFamily: Theme.fonts.body,
     fontSize: 13,
-    color: Theme.colors.textSecondary,
     marginBottom: 6,
   },
   streakRow: {
@@ -575,7 +743,6 @@ const styles = StyleSheet.create({
   streakText: {
     fontFamily: Theme.fonts.body,
     fontSize: 12,
-    color: Theme.colors.textSecondary,
   },
   partnerBadge: {
     flexDirection: 'row',
@@ -583,51 +750,42 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: Theme.borderRadius.pill,
+    borderRadius: 20,
   },
   partnerBadgeText: {
     fontFamily: Theme.fonts.bodyBold,
     fontSize: 11,
   },
   section: {
-    marginBottom: Theme.spacing.xl,
+    marginBottom: 24,
   },
   sectionTitle: {
     fontFamily: Theme.fonts.bodyBold,
-    fontSize: 11,
-    color: Theme.colors.textSecondary,
+    fontSize: 10,
     textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    marginBottom: Theme.spacing.sm,
+    letterSpacing: 2,
+    marginBottom: 12,
     marginLeft: 4,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
-    padding: Theme.spacing.md,
-    marginBottom: 6,
-    borderRadius: Theme.borderRadius.md,
-    ...Theme.shadows.soft,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.03)',
   },
   menuItemActive: {
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-    marginBottom: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.border,
+    borderBottomColor: 'transparent',
   },
   menuIconContainer: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#FAE8DC',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: Theme.spacing.md,
-  },
-  menuIconDestructive: {
-    backgroundColor: '#FFEBEE',
+    marginRight: 16,
   },
   menuTextBlock: {
     flex: 1,
@@ -635,26 +793,41 @@ const styles = StyleSheet.create({
   menuText: {
     fontFamily: Theme.fonts.bodyMedium,
     fontSize: 15,
-    color: Theme.colors.textPrimary,
-  },
-  menuTextDestructive: {
-    color: '#E57373',
   },
   menuSubLabel: {
     fontFamily: Theme.fonts.body,
     fontSize: 12,
-    color: Theme.colors.textSecondary,
     marginTop: 1,
   },
+  themeSelector: {
+    flexDirection: 'row',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+  },
+  themePill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  themePillText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.body,
+  },
   partnerPanel: {
-    backgroundColor: Theme.colors.surface,
     borderTopWidth: 0,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
-    borderBottomLeftRadius: Theme.borderRadius.md,
-    borderBottomRightRadius: Theme.borderRadius.md,
-    padding: Theme.spacing.md,
-    marginBottom: 6,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    padding: 16,
+    marginBottom: 8,
   },
   partnerPanelHeader: {
     flexDirection: 'row',
@@ -666,15 +839,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#5A9A6A',
   },
   partnerPanelStatus: {
     fontFamily: Theme.fonts.bodyBold,
     fontSize: 13,
-    color: '#5A9A6A',
   },
   relationshipTag: {
-    backgroundColor: Theme.colors.tagBackground,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
@@ -682,12 +852,10 @@ const styles = StyleSheet.create({
   relationshipTagText: {
     fontFamily: Theme.fonts.bodyMedium,
     fontSize: 11,
-    color: Theme.colors.textPrimary,
   },
   partnerPanelNote: {
     fontFamily: Theme.fonts.body,
     fontSize: 13,
-    color: Theme.colors.textSecondary,
     lineHeight: 19,
     marginBottom: 14,
   },
@@ -700,51 +868,49 @@ const styles = StyleSheet.create({
   partnerPanelNote2: {
     fontFamily: Theme.fonts.body,
     fontSize: 12,
-    color: Theme.colors.textSecondary,
   },
   unlinkButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderWidth: 1,
-    borderColor: '#FFCDD2',
-    borderRadius: Theme.borderRadius.md,
+    borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 16,
-    backgroundColor: '#FFF5F5',
   },
   unlinkButtonText: {
     fontFamily: Theme.fonts.bodyBold,
     fontSize: 14,
-    color: '#E57373',
   },
-
-  // Inline confirm box
   unlinkConfirmBox: {
-    backgroundColor: '#FFF5F5',
-    borderRadius: Theme.borderRadius.md,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#FFCDD2',
     padding: 14,
   },
   unlinkConfirmTitle: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 14,
-    color: '#C62828',
     marginBottom: 6,
+  },
+  connBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  connBadgeText: {
+    fontFamily: Theme.fonts.bodyBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   unlinkConfirmBody: {
     fontFamily: Theme.fonts.body,
     fontSize: 13,
-    color: Theme.colors.textSecondary,
     lineHeight: 18,
     marginBottom: 14,
   },
   unlinkErrorText: {
     fontFamily: Theme.fonts.body,
     fontSize: 12,
-    color: '#E57373',
     marginBottom: 10,
   },
   unlinkConfirmButtons: {
@@ -754,23 +920,19 @@ const styles = StyleSheet.create({
   unlinkCancelBtn: {
     flex: 1,
     paddingVertical: 9,
-    borderRadius: Theme.borderRadius.md,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
   },
   unlinkCancelText: {
     fontFamily: Theme.fonts.bodyBold,
     fontSize: 14,
-    color: Theme.colors.textSecondary,
   },
   unlinkConfirmBtn: {
     flex: 1,
     paddingVertical: 9,
-    borderRadius: Theme.borderRadius.md,
+    borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: '#E57373',
   },
   unlinkConfirmText: {
     fontFamily: Theme.fonts.bodyBold,
@@ -781,23 +943,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: Theme.fonts.body,
     fontSize: 12,
-    color: Theme.colors.textSecondary,
     fontStyle: 'italic',
-    marginTop: Theme.spacing.sm,
+    marginTop: 8,
     marginBottom: 8,
   },
   signOutBox: {
-    backgroundColor: '#FFF5F5',
-    borderRadius: Theme.borderRadius.md,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#FFCDD2',
     padding: 14,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   signOutTitle: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 16,
-    color: '#C62828',
     marginBottom: 14,
     textAlign: 'center',
   },
@@ -808,23 +966,19 @@ const styles = StyleSheet.create({
   inlineCancelBtn: {
     flex: 1,
     paddingVertical: 9,
-    borderRadius: Theme.borderRadius.md,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
     alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
   },
   inlineCancelText: {
     fontFamily: Theme.fonts.bodyBold,
     fontSize: 14,
-    color: Theme.colors.textSecondary,
   },
   inlineConfirmBtn: {
     flex: 1,
     paddingVertical: 9,
-    borderRadius: Theme.borderRadius.md,
+    borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: '#E57373',
   },
   inlineConfirmText: {
     fontFamily: Theme.fonts.bodyBold,

@@ -8,26 +8,54 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Dimensions,
+  PixelRatio,
+  Animated,
+  Easing,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { MoodLineChart } from '../../components/MoodLineChart';
-import { SkeletonCard } from '../../components/SkeletonCard';
-import { SuggestionCard } from '../../components/SuggestionCard';
-import { WarmButton } from '../../components/WarmButton';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { DarkBackground } from '../../components/DarkBackground';
+import { MagnetParticleButton } from '../../components/MagnetParticleButton';
+import { GlassCard } from '../../components/GlassCard';
 import { Theme } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
+import { useTheme } from '../../context/ThemeContext';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const { width: W } = Dimensions.get('window');
 
-const getGreeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+const rs = (size: number): number => {
+  return Math.round(PixelRatio.roundToNearestPixel(size * (W / 390)));
 };
 
-const getTodayLabel = () =>
-  new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+const getGreetingCopy = (name: string) => {
+  const hour = new Date().getHours();
+  const firstName = name ? name.split(' ')[0] : 'there';
+  if (hour < 12) return `Good morning, ${firstName} ☀️`;
+  if (hour < 17) return `Good afternoon, ${firstName} 🌿`;
+  return `Good evening, ${firstName} 🌙`;
+};
+
+const getEmotionColor = (score: number | null, tags: string[], colors: any): string => {
+  if (tags && tags.length > 0) {
+    const t = tags[0].toLowerCase();
+    if (t === 'happy') return colors.chartHappy;
+    if (t === 'calm') return colors.chartCalm;
+    if (t === 'loved') return colors.chartLoved;
+    if (t === 'sad') return colors.chartSad;
+    if (t === 'stressed' || t === 'angry' || t === 'frustrated') return colors.chartAngry;
+    if (t === 'grateful') return '#B5EAD7';
+    if (t === 'anxious') return '#FFDAC1';
+  }
+  if (score === null) return colors.textPlaceholder;
+  if (score >= 8) return colors.chartHappy;
+  if (score >= 6) return colors.chartCalm;
+  if (score >= 4) return colors.chartSad;
+  return colors.chartAngry;
+};
 
 const getRiskIcon = (pct: number): any => {
   if (pct < 40) return 'heart';
@@ -68,12 +96,25 @@ const formatFeatureName = (key: string, value: number) => {
 export default function DashboardScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const ds = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [suggestionCompleted, setSuggestionCompleted] = useState(false);
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('7d');
+
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 1800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1800, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
 
   const fetchData = async () => {
     if (!user) return;
@@ -96,98 +137,82 @@ export default function DashboardScreen() {
 
   const handleSuggestionComplete = async () => {
     if (!user || !data?.suggestion?.id) return;
-    
     try {
       const resp = await fetch(`${API_URL}/suggestions/${data.suggestion.id}/acted`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.id })
       });
-      
-      if (resp.ok) {
-        setSuggestionCompleted(true);
-      }
+      if (resp.ok) setSuggestionCompleted(true);
     } catch (e) {
       console.error("Failed to mark suggestion as completed", e);
     }
   };
 
-  // ── Loading ──────────────────────────────────────────────────────────────
-  if (loading && !refreshing) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <SkeletonCard height={80} style={{ marginBottom: 12, borderRadius: 16 }} />
-          <SkeletonCard height={80} style={{ marginBottom: 12, borderRadius: 16 }} />
-          <SkeletonCard height={300} style={{ marginBottom: 12, borderRadius: 20 }} />
-          <SkeletonCard height={80} style={{ borderRadius: 16 }} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Error ────────────────────────────────────────────────────────────────
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContainer}>
-          <Ionicons name="wifi-outline" size={48} color={Theme.colors.textSecondary} />
-          <Text style={styles.errorTitle}>Can't reach the server</Text>
-          <Text style={styles.errorSubtitle}>{error}</Text>
-          <WarmButton title="Try again" variant="outline" onPress={fetchData} style={{ marginTop: 24, width: 160 }} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Empty state ──────────────────────────────────────────────────────────
+  // ── Empty state Redesign ──────────────────────────────────────────────────────────
   const hasLogs = data?.me?.last_7_days?.length > 0 || data?.partner?.last_7_days?.length > 0;
-  if (!hasLogs) {
+  if (!loading && data && !hasLogs) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContainer}>
-          <View style={styles.emptyIconRing}>
-            <Ionicons name="heart-outline" size={40} color={Theme.colors.accent} />
+      <DarkBackground>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={{ alignItems:'center', paddingTop: 60, paddingBottom: 40 }}>
+            {/* Large rose ring icon */}
+            <View style={{
+              width: 80, height: 80, borderRadius: 40,
+              borderWidth: 2, borderColor: colors.borderAccent,
+              alignItems:'center', justifyContent:'center',
+              marginBottom: 20,
+            }}>
+              <Text style={{ fontSize: 32 }}>💞</Text>
+            </View>
+            
+            <Text style={{ 
+              color: colors.chartUser, fontSize: 18, fontWeight: '600',
+              marginBottom: 8, textAlign: 'center'
+            }}>
+              {!user?.partner_id ? 'Link your partner' : 'Start logging'}
+            </Text>
+            
+            <Text style={{
+              color: colors.textMuted, fontSize: 14, 
+              textAlign: 'center', lineHeight: 20, maxWidth: 260,
+              marginBottom: 32
+            }}>
+              {!user?.partner_id 
+                ? 'Connect with your partner to see your shared dashboard'
+                : 'Log your first mood to see your relationship trends'}
+            </Text>
+            
+            <View style={{ width: 220, marginTop: 8 }}>
+              {/* CTA button - same gradient style */}
+              <MagnetParticleButton
+                title={!user?.partner_id ? 'Go to Pairing' : 'Log My Mood'}
+                onPress={() => router.push((!user?.partner_id ? '/(auth)/pairing' : '/(tabs)/log-mood') as any)}
+              />
+            </View>
           </View>
-          <Text style={styles.emptyTitle}>Start your journey.</Text>
-          <Text style={styles.emptySubtitle}>
-            Log your first mood to see your relationship health here.
-          </Text>
-          <WarmButton
-            title="Log My Mood"
-            onPress={() => router.push('/(tabs)/log-mood')}
-            style={{ width: 200, marginTop: 32 }}
-          />
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </DarkBackground>
     );
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
-  const myScore: number | null = data.me?.today_score ?? null;
-  const partnerScore: number | null = data.partner?.today_score ?? null;
-  const riskPct = Math.round((data.risk_score || 0) * 100);
-  // Using the color array generated by the API directly, or fallback to default
-  const riskColor = data.risk_color || '#7AAB8A'; 
-  const riskLabel = data.risk_label || 'Feeling connected';
-  const riskIcon = getRiskIcon(riskPct);
+  const myScore: number | null = data?.me?.today_score ?? null;
+  const partnerScore: number | null = data?.partner?.today_score ?? null;
+  const riskPct = data ? Math.round((data.risk_score || 0) * 100) : 0;
+  
+  const riskStatus = useMemo(() => {
+    if (riskPct < 40) return { color: colors.accentSage, bg: colors.bgSuccess, border: colors.borderSuccess };
+    if (riskPct < 70) return { color: colors.accentGold, bg: colors.bgWarning, border: colors.borderWarning };
+    return { color: colors.accent, bg: colors.bgDanger, border: colors.borderDanger };
+  }, [riskPct, colors]);
 
-  // Pass raw ISO timestamps directly — MoodLineChart handles formatting
-  const formatChartData = (logs: any[]) => {
-    if (!logs) return [];
-    return logs.map(l => ({ date: l.date, score: l.score }));
-  };
-
-  // Convert features object into ranked array
   const activeFeatures = useMemo(() => {
     if (!data?.features_snapshot) return [];
     return Object.entries(data.features_snapshot as Record<string, number>)
       .filter(([key, value]) => {
-        // Skip volatility if exactly 0.0 per requirements
         if (key === 'volatility_score' && value === 0.0) return false;
-        // Skip things that don't indicate stress depending on their thresholds
         if (key === 'streak_broken' && value === 0) return false;
         if (key === 'low_score_overlap' && value === 0) return false;
         if (key === 'sentiment_trend' && value >= 0) return false; 
@@ -196,472 +221,548 @@ export default function DashboardScreen() {
         if (key === 'calendar_stress' && value < 0.3) return false;
         return true;
       })
-      // Could sort by impact if we knew weights, otherwise just take top 3 active
       .slice(0, 3)
       .map(([key, value]) => formatFeatureName(key, value));
   }, [data?.features_snapshot]);
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.colors.accent} />
-        }
-      >
-        {/* ── Greeting header ── */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.dateLabel}>{getTodayLabel()}</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.avatarButton}
-            onPress={() => router.push('/(tabs)/profile')}
-          >
-            <Text style={styles.avatarText}>{user?.email?.[0]?.toUpperCase() ?? '?'}</Text>
-          </TouchableOpacity>
-        </View>
+  const myLogs = data?.me?.last_7_days || [];
+  const avgMood = myLogs.length > 0 ? (myLogs.reduce((acc: number, l: any) => acc + l.score, 0) / myLogs.length).toFixed(1) : '--';
+  const daysLogged = myLogs.length > 0 ? myLogs.length : '--';
+  const syncScore = data?.correlation_score !== undefined ? data.correlation_score.toFixed(2) : '--';
 
-        {/* ── Relationship health banner ── */}
-        <View style={styles.healthBannerOuter}>
-          <View style={[styles.healthBanner, { borderColor: riskColor + '55', backgroundColor: riskColor + '12' }]}>
-            <View style={styles.healthBannerLeft}>
-              <Ionicons name={riskIcon} size={20} color={riskColor} />
-              <View style={styles.healthBannerText}>
-                <Text style={[styles.healthBannerTitle, { color: riskColor }]}>{riskLabel}</Text>
-                <Text style={styles.healthBannerSub}>Relationship stress indicator</Text>
-              </View>
+  return (
+    <DarkBackground>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 16 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+          }
+        >
+          {/* Header Area */}
+          <View style={ds.header}>
+            <View>
+              <Text style={ds.greeting}>{getGreetingCopy(user?.display_name || '')}</Text>
             </View>
-            <View style={[styles.riskBadge, { backgroundColor: riskColor }]}>
-              <Text style={styles.riskBadgeText}>{riskPct}%</Text>
+            <View style={[ds.riskBadge, { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.08)', shadowColor: riskStatus.color, shadowRadius: 15, shadowOpacity: 0.2 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {riskPct > 70 ? (
+                  <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                    <Ionicons name="heart" size={14} color={riskStatus.color} />
+                  </Animated.View>
+                ) : (
+                  <Ionicons name="heart-half" size={14} color={riskStatus.color} />
+                )}
+                <Text style={[ds.riskPct, { color: riskStatus.color }]}>{riskPct}%</Text>
+              </View>
+              <Text style={[ds.riskLabel, { color: colors.textPrimary, opacity: 0.6 }]}>stress risk</Text>
             </View>
           </View>
           
-          {/* Feature Breakdown if we have stress triggers */}
-          {activeFeatures.length > 0 && riskPct > 30 && (
-            <View style={styles.featuresList}>
-              <Text style={styles.featuresTitle}>Key stress factors:</Text>
-              {activeFeatures.map((f, i) => (
-                <View key={i} style={styles.featureItem}>
-                  <Ionicons name="medical" size={8} color={riskColor + '88'} />
-                  <Text style={styles.featureText}>{f}</Text>
+          <View style={ds.headerRule} />
+
+          {/* Active Signals Strip */}
+          {activeFeatures.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={ds.signalsScroll}>
+              {activeFeatures.map((feature, i) => (
+                <View key={i} style={ds.signalPill}>
+                  <Text style={ds.signalDot}>●</Text>
+                  <Text style={ds.signalText}>{feature}</Text>
                 </View>
               ))}
+            </ScrollView>
+          )}
+
+          {/* Mood Graph Card */}
+          <View style={ds.graphCard}>
+            <View style={ds.cardHeaderRow}>
+              <Text style={ds.cardTitle}>Mood Trends</Text>
+              <View style={ds.rangeSelector}>
+                {['7d', '30d', '90d'].map((r) => (
+                  <TouchableOpacity
+                    key={r}
+                    onPress={() => setTimeRange(r as any)}
+                    style={[ds.rangePill, timeRange === r && ds.rangePillActive]}
+                  >
+                    <Text style={[ds.rangeText, timeRange === r && ds.rangeTextActive]}>{r}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            
+            {data && (() => {
+              const myLogsData = data.me?.last_7_days || [];
+              const partnerLogsData = data.partner?.last_7_days || [];
+              const totalLogs = Math.max(myLogsData.length, partnerLogsData.length);
+              
+              return (
+                <View style={{ marginHorizontal: -8, position: 'relative' }}>
+                  <LinearGradient
+                    colors={['transparent', 'rgba(247, 166, 196, 0.12)']}
+                    style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%' }}
+                    pointerEvents="none"
+                  />
+                  <MoodLineChart 
+                    partnerAData={myLogsData}
+                    partnerBData={partnerLogsData}
+                  />
+                  {totalLogs < 2 && (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, textAlign:'center', marginTop: 8, marginBottom: 8 }}>
+                      Log for 2+ days to see your trend line
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
+
+            <View style={ds.legendRow}>
+              <View style={ds.legendItem}>
+                <View style={[ds.legendColor, { backgroundColor: colors.chartUser }]} />
+                <Text style={ds.legendText}>You</Text>
+              </View>
+              <View style={ds.legendItem}>
+                <View style={[ds.legendColor, { backgroundColor: colors.chartPartner }]} />
+                <Text style={ds.legendText}>Partner</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Today's Status Card */}
+          <View style={ds.statusCard}>
+            <Text style={ds.sectionLabel}>TODAY'S FEELING</Text>
+            <View style={ds.statusRow}>
+              {/* Me */}
+              <View style={ds.statusCol}>
+                <Text style={ds.statusWho}>You</Text>
+                <Text style={[ds.statusScore, { color: getEmotionColor(myScore, data?.me?.today_tags || [], colors) }]}>{myScore ?? '—'}</Text>
+                <Text style={ds.emojiText}>{getMoodEmoji(myScore)}</Text>
+                <View style={ds.tagsRow}>
+                  {data?.me?.today_tags?.slice(0, 2).map((tag: string, i: number) => (
+                    <View key={i} style={ds.tagPill}>
+                      <Text style={ds.tagText}>{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              
+              <View style={ds.verticalHeartDivider}>
+                <Ionicons name="heart" size={16} color="rgba(255,255,255,0.15)" />
+              </View>
+
+              {/* Partner */}
+              <View style={ds.statusCol}>
+                <Text style={ds.statusWho}>Partner</Text>
+                {partnerScore ? (
+                  <>
+                    <Text style={[ds.statusScore, { color: getEmotionColor(partnerScore, data?.partner?.today_tags || [], colors) }]}>{partnerScore}</Text>
+                    <Text style={ds.emojiText}>{getMoodEmoji(partnerScore)}</Text>
+                    <View style={ds.tagsRow}>
+                      {data?.partner?.today_tags?.slice(0, 2).map((tag: string, i: number) => (
+                        <View key={i} style={ds.tagPill}>
+                          <Text style={ds.tagText}>{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[ds.statusScore, { color: colors.textPlaceholder }]}>—</Text>
+                    <Text style={[ds.emojiText, { fontSize: 14, color: colors.textMuted, marginTop: 0 }]}>not logged yet</Text>
+                  </>
+                )}
+              </View>
+            </View>
+          </View>
+
+          {/* STREAK CARD */}
+          <View style={ds.streakCard}>
+            {(data?.me?.streak > 0 && data?.partner?.streak > 0) ? (
+              <View style={ds.streakRow}>
+                <View style={ds.streakCol}>
+                  <Text style={[ds.streakText, { color: '#FFD166', textShadowColor: 'rgba(255, 209, 102, 0.4)', textShadowRadius: 10 }]}>🔥 {data.me.streak} day streak</Text>
+                  <Text style={ds.streakWho}>You</Text>
+                </View>
+                <View style={ds.verticalHeartDivider}>
+                  <Ionicons name="heart" size={16} color="rgba(255,255,255,0.15)" />
+                </View>
+                <View style={ds.streakCol}>
+                  <Text style={[ds.streakText, { color: '#FFD166', textShadowColor: 'rgba(255, 209, 102, 0.4)', textShadowRadius: 10 }]}>🔥 {data.partner.streak} day streak</Text>
+                  <Text style={ds.streakWho}>Partner</Text>
+                </View>
+              </View>
+            ) : (
+              <Text style={ds.streakMotivational}>Start logging daily to build your streak</Text>
+            )}
+          </View>
+
+          {/* CORRELATION HINT */}
+          <View style={ds.statsRow}>
+            <View style={ds.statMiniCard}>
+              <Text style={ds.statLabel}>Sync Score</Text>
+              <Text style={ds.statValue}>{syncScore}</Text>
+            </View>
+            <View style={ds.statMiniCard}>
+              <Text style={ds.statLabel}>Avg Mood</Text>
+              <Text style={ds.statValue}>{avgMood}</Text>
+            </View>
+            <View style={ds.statMiniCard}>
+              <Text style={ds.statLabel}>Days Logged</Text>
+              <Text style={ds.statValue}>{daysLogged}</Text>
+            </View>
+          </View>
+
+          {/* Suggestion Card (if high stress) */}
+          {data?.suggestion && riskPct > 70 && (
+            <View style={{ marginBottom: 16 }}>
+              <LinearGradient
+                colors={['#B8A1E3', '#F7A6C4']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ borderRadius: 20, padding: 1 }}
+              >
+                <View style={[ds.suggestionCard, { margin: 0, marginBottom: 0, borderWidth: 0 }]}>
+                  <View style={ds.suggestionHeader}>
+                    <Ionicons name="mail-open" size={16} color={colors.accent} />
+                    <Text style={[ds.suggestionTitle, { color: colors.textPrimary }]}>A NOTE FOR YOU TWO</Text>
+                  </View>
+                  <Text style={ds.suggestionBody}>{data.suggestion.title}</Text>
+                  <Text style={ds.suggestionDesc}>{data.suggestion.description}</Text>
+                  {!suggestionCompleted && !data.suggestion.acted_on && (
+                    <TouchableOpacity style={ds.suggestionBtn} onPress={handleSuggestionComplete}>
+                      <LinearGradient
+                        colors={['#B8A1E3', '#F7A6C4']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={{ borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}
+                      >
+                        <Text style={[ds.suggestionBtnText, { color: '#1A1B2F' }]}>We did this</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </LinearGradient>
             </View>
           )}
-        </View>
 
-        {/* ── Today's mood cards ── */}
-        <Text style={styles.sectionLabel}>TODAY'S MOOD</Text>
-        <View style={styles.scoreRow}>
-          {/* You */}
-          <View style={[styles.scoreCard, { borderTopColor: '#6B9FD4' }]}>
-            <Text style={styles.scoreCardWho}>You</Text>
-            {myScore !== null ? (
-              <>
-                <Text style={[styles.scoreCardEmoji]}>{getMoodEmoji(myScore)}</Text>
-                <Text style={[styles.scoreCardValue, { color: '#6B9FD4' }]}>{myScore}</Text>
-                <Text style={styles.scoreCardSub}>out of 10</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.scoreCardEmoji}>💭</Text>
-                <Text style={styles.scoreCardMissing}>Not logged</Text>
-                <TouchableOpacity
-                  style={styles.logNowButton}
-                  onPress={() => router.push('/(tabs)/log-mood')}
-                >
-                  <Text style={styles.logNowText}>Log now</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-
-          <Ionicons name="heart" size={18} color={Theme.colors.accent} style={styles.heartDivider} />
-
-          {/* Partner */}
-          <View style={[styles.scoreCard, { borderTopColor: '#E8A0B4' }]}>
-            <Text style={styles.scoreCardWho}>Partner</Text>
-            {partnerScore !== null ? (
-              <>
-                <Text style={styles.scoreCardEmoji}>{getMoodEmoji(partnerScore)}</Text>
-                <Text style={[styles.scoreCardValue, { color: '#E8A0B4' }]}>{partnerScore}</Text>
-                <Text style={styles.scoreCardSub}>out of 10</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.scoreCardEmoji}>💭</Text>
-                <Text style={styles.scoreCardMissing}>Not logged yet</Text>
-              </>
-            )}
-          </View>
-        </View>
-
-        {/* ── Mood chart ── */}
-        <MoodLineChart
-          partnerAData={formatChartData(data.me?.last_7_days)}
-          partnerBData={formatChartData(data.partner?.last_7_days)}
-        />
-
-        {/* ── Streaks ── */}
-        <Text style={[styles.sectionLabel, { marginTop: 16 }]}>LOGGING STREAKS</Text>
-        <View style={styles.streakRow}>
-          <View style={styles.streakItem}>
-            <Ionicons name="flame" size={22} color="#6B9FD4" />
-            <Text style={[styles.streakNum, { color: '#6B9FD4' }]}>{data.me?.streak ?? 0}</Text>
-            <Text style={styles.streakLabel}>Your streak</Text>
-            <Text style={styles.streakDays}>days</Text>
-          </View>
-          <View style={styles.streakDivider} />
-          <View style={styles.streakItem}>
-            <Ionicons name="flame" size={22} color="#E8A0B4" />
-            <Text style={[styles.streakNum, { color: '#E8A0B4' }]}>{data.partner?.streak ?? 0}</Text>
-            <Text style={styles.streakLabel}>Their streak</Text>
-            <Text style={styles.streakDays}>days</Text>
-          </View>
-        </View>
-
-        {/* ── Suggestion ── */}
-        {data.suggestion && (
-          <View style={styles.suggestionOuter}>
-            <View style={styles.suggestionTag}>
-              <Ionicons name="sparkles" size={11} color={Theme.colors.accent} />
-              <Text style={styles.suggestionTagText}>SUGGESTED FOR YOU BOTH</Text>
-            </View>
-            <SuggestionCard
-              title={data.suggestion.title || 'Connection Moment'}
-              description={
-                data.suggestion.description ||
-                'Take a minute to share one thing you appreciate about each other today.'
-              }
-              tier={data.suggestion.tier || 'soft'}
-              actions={data.suggestion.actions || []}
-              onPress={handleSuggestionComplete}
-              completed={suggestionCompleted || data.suggestion.acted_on}
+          {/* Log CTA */}
+          <View style={{ marginTop: 24, marginBottom: 24 }}>
+            <MagnetParticleButton
+              title={data?.me?.today_logged ? 'Log another mood' : "Log today's mood"}
+              onPress={() => router.push('/(tabs)/log-mood')}
             />
           </View>
-        )}
 
-        {/* ── Log CTA ── */}
-        <TouchableOpacity
-          style={styles.logCTA}
-          onPress={() => router.push('/(tabs)/log-mood')}
-        >
-          <Ionicons name="add-circle" size={20} color="#fff" />
-          <Text style={styles.logCTAText}>
-            {data.me?.today_logged ? 'Log another mood' : "Log today's mood"}
-          </Text>
-        </TouchableOpacity>
-
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </DarkBackground>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Theme.colors.background,
-  },
-  content: {
+const getStyles = (colors: any, isDark: boolean) => {
+  const cardStyle: any = {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 20,
     padding: 20,
-    paddingTop: 16,
-    paddingBottom: 56,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  };
 
-  // Header
+  return StyleSheet.create({
   header: {
+    paddingTop: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    alignItems: 'center',
   },
   greeting: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 13,
-    color: Theme.colors.textSecondary,
-    marginBottom: 2,
-  },
-  dateLabel: {
+    fontSize: 24,
+    color: colors.textPrimary,
     fontFamily: Theme.fonts.headingBold,
-    fontSize: 20,
-    color: Theme.colors.textPrimary,
   },
-  avatarButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Theme.colors.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
+  userName: {
+    display: 'none',
   },
-  avatarText: {
-    fontFamily: Theme.fonts.headingBold,
-    fontSize: 15,
-    color: '#fff',
-  },
-
-  // Health banner
-  healthBannerOuter: {
-    marginBottom: 20,
-  },
-  healthBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    padding: 14,
-  },
-  healthBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  healthBannerText: {
-    flex: 1,
-  },
-  healthBannerTitle: {
-    fontFamily: Theme.fonts.bodyBold,
-    fontSize: 15,
-  },
-  healthBannerSub: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 11,
-    color: Theme.colors.textSecondary,
-    marginTop: 1,
+  headerRule: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+    marginTop: 16,
+    marginHorizontal: -16,
+    marginBottom: 16,
   },
   riskBadge: {
     borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  riskPct: {
+    fontSize: 13,
+    fontFamily: Theme.fonts.bodyBold,
+  },
+  riskLabel: {
+    fontSize: 9,
+    fontFamily: Theme.fonts.body,
+    letterSpacing: 0.5,
+    opacity: 0.7,
+  },
+  riskPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  signalsScroll: {
+    gap: 8,
+    paddingBottom: 14,
+  },
+  signalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bgTagSelected,
+    borderColor: colors.borderAccent,
+    borderWidth: 1,
+    borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 5,
+    gap: 6,
   },
-  riskBadgeText: {
+  signalDot: {
+    fontSize: 10,
+    color: colors.accent,
+  },
+  signalText: {
+    fontSize: 12,
+    color: colors.accent,
+    fontWeight: '500',
+    fontFamily: Theme.fonts.body,
+  },
+  // All cards common
+  graphCard: {
+    ...cardStyle,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 16,
+    color: colors.textPrimary,
     fontFamily: Theme.fonts.headingBold,
-    fontSize: 14,
-    color: '#fff',
   },
-  featuresList: {
-    backgroundColor: Theme.colors.surface,
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 14,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    paddingTop: 8,
-    marginTop: -4, // tuck under banner
-    marginHorizontal: 4,
-    ...Theme.shadows.soft,
-    zIndex: -1,
+  rangeSelector: {
+    flexDirection: 'row',
+    backgroundColor: colors.borderDefault,
+    borderRadius: 12,
+    padding: 3,
+    gap: 2,
   },
-  featuresTitle: {
-    fontFamily: Theme.fonts.bodyBold,
+  rangePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+  },
+  rangePillActive: {
+    backgroundColor: colors.accent,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
+  },
+  rangeText: {
     fontSize: 11,
-    color: Theme.colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    color: colors.textMuted,
+    fontFamily: Theme.fonts.body,
   },
-  featureItem: {
+  rangeTextActive: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+    fontFamily: Theme.fonts.bodyBold,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 12,
+  },
+  legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 3,
   },
-  featureText: {
-    fontFamily: Theme.fonts.body,
+  legendColor: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  legendText: {
     fontSize: 12,
-    color: Theme.colors.textSecondary,
+    color: colors.textSecondary,
+    fontFamily: Theme.fonts.body,
   },
-
-  // Section labels
+  statusCard: {
+    ...cardStyle,
+  },
   sectionLabel: {
-    fontFamily: Theme.fonts.bodyBold,
-    fontSize: 11,
-    color: Theme.colors.textSecondary,
-    letterSpacing: 1.5,
-    marginBottom: 10,
-  },
-
-  // Score cards
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    fontSize: 10,
+    letterSpacing: 3,
+    color: colors.textSecondary,
+    fontFamily: Theme.fonts.body,
     marginBottom: 16,
   },
-  scoreCard: {
-    flex: 1,
-    backgroundColor: Theme.colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    borderTopWidth: 3,
-    ...Theme.shadows.soft,
-    minHeight: 120,
-    justifyContent: 'center',
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
   },
-  scoreCardWho: {
-    fontFamily: Theme.fonts.body,
+  statusCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusWho: {
     fontSize: 11,
-    color: Theme.colors.textSecondary,
+    color: colors.textSecondary,
+    fontFamily: Theme.fonts.body,
     textTransform: 'uppercase',
-    letterSpacing: 1,
     marginBottom: 4,
   },
-  scoreCardEmoji: {
-    fontSize: 22,
-    marginBottom: 2,
-  },
-  scoreCardValue: {
+  statusScore: {
+    fontSize: 52,
+    fontWeight: '800',
     fontFamily: Theme.fonts.headingBold,
-    fontSize: 38,
-    lineHeight: 42,
+    marginBottom: 8,
   },
-  scoreCardSub: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 10,
-    color: Theme.colors.textSecondary,
-    marginTop: 2,
+  emojiText: {
+    fontSize: 24,
+    marginTop: -4,
+    marginBottom: 8,
   },
-  scoreCardMissing: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 12,
-    color: Theme.colors.textSecondary,
-    marginTop: 2,
-    textAlign: 'center',
+  tagsRow: {
+    flexDirection: 'row',
+    gap: 4,
   },
-  logNowButton: {
-    marginTop: 8,
-    backgroundColor: Theme.colors.accent + '22',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  tagPill: {
+    backgroundColor: colors.bgTagSelected,
+    borderColor: colors.borderAccent,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 4,
   },
-  logNowText: {
-    fontFamily: Theme.fonts.bodyBold,
+  tagText: {
     fontSize: 11,
-    color: Theme.colors.accent,
+    color: colors.textPrimary,
+    fontFamily: Theme.fonts.body,
   },
-  heartDivider: {
-    marginHorizontal: 10,
+  verticalHeartDivider: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
   },
-
-  // Streaks
+  streakCard: {
+    ...cardStyle,
+    justifyContent: 'center',
+  },
   streakRow: {
     flexDirection: 'row',
-    backgroundColor: Theme.colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    alignItems: 'center',
     justifyContent: 'space-around',
-    ...Theme.shadows.soft,
-  },
-  streakItem: {
     alignItems: 'center',
-    gap: 2,
   },
-  streakNum: {
-    fontFamily: Theme.fonts.headingBold,
-    fontSize: 32,
-    lineHeight: 36,
+  streakCol: {
+    alignItems: 'center',
+    flex: 1,
   },
-  streakLabel: {
+  streakText: {
+    fontSize: 14,
+    color: colors.textPrimary,
     fontFamily: Theme.fonts.bodyBold,
-    fontSize: 12,
-    color: Theme.colors.textPrimary,
   },
-  streakDays: {
-    fontFamily: Theme.fonts.body,
+  streakWho: {
     fontSize: 10,
-    color: Theme.colors.textSecondary,
+    color: colors.textSecondary,
+    fontFamily: Theme.fonts.body,
+    marginTop: 4,
+  },
+  verticalDividerStreak: {
+    display: 'none',
+  },
+  streakMotivational: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontFamily: Theme.fonts.body,
+    textAlign: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  statMiniCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: 12,
+    padding: 12,
+    flex: 1,
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 10,
+    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+    fontFamily: Theme.fonts.body,
+    marginBottom: 6,
   },
-  streakDivider: {
-    width: 1,
-    height: 48,
-    backgroundColor: '#EDE8E4',
+  statValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    fontFamily: Theme.fonts.headingBold,
   },
-
-  // Suggestion
-  suggestionOuter: {
+  suggestionCard: {
+    ...cardStyle,
+  },
+  suggestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  suggestionTitle: {
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: colors.accent,
+    fontFamily: Theme.fonts.bodyBold,
+  },
+  suggestionBody: {
+    fontSize: 18,
+    color: colors.textPrimary,
+    fontFamily: Theme.fonts.headingBold,
+    marginBottom: 4,
+  },
+  suggestionDesc: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontFamily: Theme.fonts.body,
+    lineHeight: 20,
     marginBottom: 16,
   },
-  suggestionTag: {
-    flexDirection: 'row',
+  suggestionBtn: {
+    borderRadius: 12,
+    paddingVertical: 10,
     alignItems: 'center',
-    gap: 4,
-    marginBottom: 6,
-    marginLeft: 2,
+    backgroundColor: colors.bgTagSelected,
+    borderWidth: 1,
+    borderColor: colors.borderAccent,
   },
-  suggestionTagText: {
-    fontFamily: Theme.fonts.bodyBold,
-    fontSize: 10,
-    color: Theme.colors.accent,
-    letterSpacing: 1.5,
-  },
-
-  // Log CTA
-  logCTA: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Theme.colors.accent,
-    borderRadius: 16,
-    padding: 16,
-  },
-  logCTAText: {
-    fontFamily: Theme.fonts.bodyBold,
-    fontSize: 15,
-    color: '#fff',
-  },
-
-  // Empty / Error
-  emptyIconRing: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#FFF0E8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontFamily: Theme.fonts.headingBold,
-    fontSize: 26,
-    color: Theme.colors.textPrimary,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontFamily: Theme.fonts.body,
-    fontSize: 15,
-    color: Theme.colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 22,
-  },
-  errorTitle: {
-    fontFamily: Theme.fonts.headingBold,
-    fontSize: 20,
-    color: Theme.colors.textPrimary,
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  errorSubtitle: {
-    fontFamily: Theme.fonts.body,
+  suggestionBtnText: {
     fontSize: 14,
-    color: Theme.colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
+    color: colors.accent,
+    fontFamily: Theme.fonts.bodyBold,
   },
 });
+}

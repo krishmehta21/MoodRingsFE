@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
+import { Animated } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import {
   useFonts,
@@ -17,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 SplashScreen.preventAutoHideAsync();
 
-const ONBOARDING_KEY = 'moodrings_has_seen_onboarding';
+const ONBOARDING_KEY = 'moodrings_onboarded';
 
 export const triggerOnboardingRefresh = { fn: () => {} };
 
@@ -46,6 +48,9 @@ function InitialLayout() {
     };
     load();
     triggerOnboardingRefresh.fn = load;
+    
+    // Keep-alive ping to wake up Render server
+    fetch(`${process.env.EXPO_PUBLIC_API_URL}/health`).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -105,27 +110,53 @@ function InitialLayout() {
     }
   }, [token]);
 
+  const { isDark, colors } = useTheme();
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const prevIsDark = useRef(isDark);
+
+  useEffect(() => {
+    if (prevIsDark.current !== isDark) {
+      prevIsDark.current = isDark;
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 0.7,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isDark]);
+
   if (isLoading || !fontsLoaded || hasSeenOnboarding === null) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAF8F5' }}>
-        <ActivityIndicator size="large" color="#C4764A" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bgPrimary }}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-    </Stack>
+    <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+      </Stack>
+    </Animated.View>
   );
 }
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <InitialLayout />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <InitialLayout />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

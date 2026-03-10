@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Theme } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../context/ThemeContext';
 
 interface SuggestionCardProps {
   title: string;
@@ -22,29 +23,31 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   completed = false,
   completedMessage = 'Beautiful. You showed up for each other.',
 }) => {
+  const { colors } = useTheme();
+
   const getTierStyles = () => {
     switch (tier) {
       case 'priority':
         return {
-          backgroundColor: '#FFF5F2',
-          borderColor: 'rgba(196, 118, 74, 0.2)',
+          backgroundColor: `${colors.accent}15`,
+          borderColor: colors.borderAccentSoft,
           icon: 'alert-circle-outline',
-          iconColor: Theme.colors.alert,
+          iconColor: colors.textAccent,
         };
       case 'active':
         return {
-          backgroundColor: '#FFFBF2',
-          borderColor: 'rgba(232, 184, 109, 0.2)',
+          backgroundColor: `${colors.accentGold}15`,
+          borderColor: colors.borderSubtle,
           icon: 'bulb-outline',
-          iconColor: Theme.colors.warning,
+          iconColor: colors.accentGold,
         };
       case 'soft':
       default:
         return {
-          backgroundColor: '#F9FBF9',
-          borderColor: 'rgba(127, 175, 138, 0.2)',
+          backgroundColor: `${colors.accentSage}15`,
+          borderColor: colors.borderSubtle,
           icon: 'heart-outline',
-          iconColor: Theme.colors.success,
+          iconColor: colors.accentSage,
         };
     }
   };
@@ -53,19 +56,19 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: stylesT.backgroundColor, borderColor: stylesT.borderColor }]}>
-      <View style={styles.iconContainer}>
-        <Ionicons name={completed ? "checkmark-circle" : stylesT.icon as any} size={24} color={completed ? Theme.colors.success : stylesT.iconColor} />
+      <View style={[styles.iconContainer, { backgroundColor: colors.bgCard }]}>
+        <Ionicons name={completed ? "checkmark-circle" : stylesT.icon as any} size={24} color={completed ? colors.accentSage : stylesT.iconColor} />
       </View>
       <View style={styles.textContainer}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.description}>{completed ? completedMessage : description}</Text>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+        <Text style={[styles.description, { color: colors.textSecondary }]}>{completed ? completedMessage : description}</Text>
         
         {!completed && actions.length > 0 && (
           <View style={styles.actionsList}>
             {actions.map((action, index) => (
               <View key={index} style={styles.actionItem}>
                 <Ionicons name="ellipse" size={6} color={stylesT.iconColor} style={styles.actionBullet} />
-                <Text style={styles.actionItemText}>{action}</Text>
+                <Text style={[styles.actionItemText, { color: colors.textPrimary }]}>{action}</Text>
               </View>
             ))}
           </View>
@@ -86,11 +89,9 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#FFF9F5', // Slightly warmer tinted white
     borderRadius: Theme.borderRadius.lg,
     padding: Theme.spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(196, 118, 74, 0.1)',
     marginVertical: Theme.spacing.md,
     ...Theme.shadows.soft,
   },
@@ -98,7 +99,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Theme.spacing.md,
@@ -109,13 +109,11 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: Theme.fonts.headingBold,
     fontSize: 18,
-    color: Theme.colors.textPrimary,
     marginBottom: 4,
   },
   description: {
     fontFamily: Theme.fonts.body,
     fontSize: 14,
-    color: Theme.colors.textSecondary,
     lineHeight: 20,
     marginBottom: Theme.spacing.sm,
   },
@@ -127,7 +125,6 @@ const styles = StyleSheet.create({
   actionText: {
     fontFamily: Theme.fonts.bodyBold,
     fontSize: 14,
-    color: Theme.colors.accent,
     marginRight: 4,
   },
   actionsList: {
@@ -145,7 +142,6 @@ const styles = StyleSheet.create({
   actionItemText: {
     fontFamily: Theme.fonts.body,
     fontSize: 13,
-    color: Theme.colors.textPrimary,
     flex: 1,
     lineHeight: 18,
   },

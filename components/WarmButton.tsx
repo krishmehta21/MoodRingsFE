@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
 import { Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface WarmButtonProps {
   title: string;
@@ -19,25 +20,27 @@ export const WarmButton: React.FC<WarmButtonProps> = ({
   style,
   variant = 'primary',
 }) => {
+  const { colors } = useTheme();
+
   const getButtonStyle = () => {
     switch (variant) {
       case 'secondary':
-        return styles.secondaryButton;
+        return [styles.secondaryButton, { backgroundColor: colors.bgTag }];
       case 'outline':
-        return styles.outlineButton;
+        return [styles.outlineButton, { borderColor: colors.accent }];
       default:
-        return styles.primaryButton;
+        return [styles.primaryButton, { backgroundColor: colors.accent }];
     }
   };
 
   const getTextStyle = () => {
     switch (variant) {
       case 'secondary':
-        return styles.secondaryText;
+        return { color: colors.textPrimary };
       case 'outline':
-        return styles.outlineText;
+        return { color: colors.accent };
       default:
-        return styles.primaryText;
+        return { color: colors.bgPrimary };
     }
   };
 
@@ -48,13 +51,13 @@ export const WarmButton: React.FC<WarmButtonProps> = ({
       disabled={disabled || loading}
       style={[
         styles.button,
-        getButtonStyle(),
+        ...([getButtonStyle()] as any),
         (disabled || loading) && styles.disabled,
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? Theme.colors.accent : '#FFF'} />
+        <ActivityIndicator color={variant === 'outline' ? colors.accent : colors.bgPrimary} />
       ) : (
         <Text style={[styles.text, getTextStyle()]}>{title}</Text>
       )}
@@ -72,16 +75,12 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   primaryButton: {
-    backgroundColor: Theme.colors.accent,
     ...Theme.shadows.soft,
   },
-  secondaryButton: {
-    backgroundColor: Theme.colors.tagBackground,
-  },
+  secondaryButton: {},
   outlineButton: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: Theme.colors.accent,
   },
   disabled: {
     opacity: 0.5,
@@ -90,14 +89,5 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.headingBold,
     fontSize: 16,
     letterSpacing: 0.5,
-  },
-  primaryText: {
-    color: '#FFFFFF',
-  },
-  secondaryText: {
-    color: Theme.colors.textPrimary,
-  },
-  outlineText: {
-    color: Theme.colors.accent,
   },
 });
